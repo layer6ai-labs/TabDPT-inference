@@ -11,7 +11,7 @@ class TabDPTModel(nn.Module):
         self.n_out = n_out
         self.transformer_encoder = nn.ModuleList(
             [
-                TransformerEncoderLayer(activation="gelu", d_model=ninp, dim_feedforward=nhid, dropout=0.0, nhead=nhead, norm_first=norm_first)
+                TransformerEncoderLayer(activation="gelu", d_model=ninp, dim_feedforward=nhid, dropout=dropout, nhead=nhead, norm_first=norm_first)
                 for _ in range(nlayers)
             ]
         )
