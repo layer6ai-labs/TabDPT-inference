@@ -66,8 +66,9 @@ class TabDPTClassifier(TabDPTEstimator, ClassifierMixin):
         context_size: int = 1024,
         return_logits: bool = False,
         seed: int | None = None,
+        class_perm: np.ndarray | None = None,
     ):
-        train_x, train_y, test_x = self._prepare_prediction(X)
+        train_x, train_y, test_x = self._prepare_prediction(X, class_perm=class_perm)
 
         if seed is not None:
             self.faiss_knn.index.seed = seed
@@ -136,20 +137,31 @@ class TabDPTClassifier(TabDPTEstimator, ClassifierMixin):
         context_size: int = 1024,
         seed: int | None = None,
     ):
-        prediction_cumsum = None
-        generator = np.random.SeedSequence(seed)
-        for _, inner_seed in tqdm(zip(range(n_ensembles), generator.generate_state(n_ensembles))):
-            inner_seed = int(inner_seed)
-            pred = self.predict_proba(
-                X, context_size=context_size, return_logits=True, seed=inner_seed
-            )
-            if prediction_cumsum is None:
-                prediction_cumsum = np.zeros_like(pred)
-            prediction_cumsum += pred
 
-        pred = (prediction_cumsum / n_ensembles)[..., :self.num_classes] / temperature
-        pred = softmax(pred, axis=-1)
-        pred /= pred.sum(axis=-1, keepdims=True)  # numerical stability
+        root_ss = np.random.SeedSequence(seed)
+        inner_seeds = root_ss.generate_state(n_ensembles)
+        logit_cumsum = None
+
+        for inner_seed in tqdm(inner_seeds, desc="ensembles"):
+            inner_seed = int(inner_seed)
+            perm = generate_random_permutation(self.num_classes, inner_seed)
+            inv_perm = np.argsort(perm)
+
+            logits = self.predict_proba(
+                X,
+                context_size=context_size,
+                return_logits=True,
+                seed=inner_seed,
+                class_perm=perm,
+            )
+            logits = logits[..., inv_perm]
+            if logit_cumsum is None:
+                logit_cumsum = np.zeros_like(logits)
+            logit_cumsum += logits
+
+        logits = (logit_cumsum / n_ensembles)[..., :self.num_classes] / temperature
+        pred = softmax(logits, axis=-1)
+        pred /= pred.sum(axis=-1, keepdims=True)
         return pred
 
     def predict(
