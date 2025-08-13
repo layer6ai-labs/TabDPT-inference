@@ -1,5 +1,5 @@
 import json
-from pathlib import Path
+from enum import StrEnum, auto
 
 import numpy as np
 import torch
@@ -13,12 +13,17 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.utils.validation import check_is_fitted
 
 from .model import TabDPTModel
-from .utils import FAISS, convert_to_torch_tensor
+from .utils import FAISS, convert_to_torch_tensor, generate_random_permutation
 
 # Constants for model caching and download
 _VERSION = "1_1"
 _MODEL_NAME = f"tabdpt{_VERSION}.safetensors"
 CPU_INF_BATCH = 16
+
+
+class LongSchemaStrategy(StrEnum):
+    PCA = auto()
+    SUBSAMPLE = auto()
 
 
 class TabDPTEstimator(BaseEstimator):
@@ -29,10 +34,14 @@ class TabDPTEstimator(BaseEstimator):
         device: str = None,
         use_flash: bool = True,
         compile: bool = True,
+        long_schema_strategy: LongSchemaStrategy = LongSchemaStrategy.PCA,
     ):
         self.mode = mode
+        self.long_schema_strategy = long_schema_strategy
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
-        self.inf_batch_size = inf_batch_size if self.device == "cuda" else min(inf_batch_size, CPU_INF_BATCH)
+        self.inf_batch_size = (
+            inf_batch_size if self.device == "cuda" else min(inf_batch_size, CPU_INF_BATCH)
+        )
         self.use_flash = use_flash and self.device == "cuda"
 
         self.path = hf_hub_download(
@@ -71,7 +80,10 @@ class TabDPTEstimator(BaseEstimator):
         self.n_instances, self.n_features = X.shape
         self.X_train = X
         self.y_train = y
-        if self.n_features > self.max_features:
+        if (
+            self.n_features > self.max_features
+            and self.long_schema_strategy == LongSchemaStrategy.PCA
+        ):
             train_x = convert_to_torch_tensor(self.X_train).to(self.device).float()
             _, _, self.V = torch.pca_lowrank(train_x, q=min(train_x.shape[0], self.max_features))
 
@@ -79,7 +91,9 @@ class TabDPTEstimator(BaseEstimator):
         if self.compile:
             self.model = torch.compile(self.model)
 
-    def _prepare_prediction(self, X: np.ndarray):
+    def _prepare_prediction(
+        self, X: np.ndarray, seed: int | None = None, class_perm: np.ndarray | None = None
+    ):
         check_is_fitted(self)
         self.X_test = self.imputer.transform(X)
         self.X_test = self.scaler.transform(self.X_test)
@@ -89,8 +103,22 @@ class TabDPTEstimator(BaseEstimator):
             convert_to_torch_tensor(self.X_test).to(self.device).float(),
         )
 
-        # Apply PCA optionally to reduce the number of features
+        # Apply PCA or subsampling optionally to reduce the number of features
         if self.n_features > self.max_features:
-            train_x = train_x @ self.V
-            test_x = test_x @ self.V
+            if self.long_schema_strategy == LongSchemaStrategy.PCA:
+                train_x = train_x @ self.V
+                test_x = test_x @ self.V
+            elif self.long_schema_strategy == LongSchemaStrategy.SUBSAMPLE:
+                feat_perm = generate_random_permutation(train_x.shape[1], seed)
+                train_x = train_x[:, feat_perm][:, : self.model.encoder.num_features]
+                test_x = test_x[:, feat_perm][:, : self.model.encoder.num_features]
+            else:
+                raise Exception("Undefined method for handling long context.")
+
+        if class_perm is not None:
+            inv_perm = np.argsort(class_perm)
+            train_y = train_y.to(torch.long)
+            inv_perm = torch.as_tensor(inv_perm, device=train_y.device)
+            train_y = inv_perm[train_y].to(torch.float)
+
         return train_x, train_y, test_x
