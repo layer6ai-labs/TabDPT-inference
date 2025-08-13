@@ -181,6 +181,12 @@ src="figures/performance-comparison.png" width="100%">
 
 For full details, please see our paper [*TabDPT: Scaling Tabular Foundation Models on Real Data*](https://arxiv.org/abs/2410.18164).
 
+## Reproducing TabDPT Paper Numbers
+
+It is impossible to exactly replicate the results of TabDPT between runs.
+
+However, running the `paper_evaluation.py` script with default parameters should result in comparable results with the numbers reported in the paper.
+
 
 ## Citation
 ```
