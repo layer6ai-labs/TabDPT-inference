@@ -63,12 +63,11 @@ if __name__ == "__main__":
     model_cls = TabDPTClassifier(inf_batch_size=args.inf_batch_size, device=device)
     model_reg = TabDPTRegressor(inf_batch_size=args.inf_batch_size, device=device)
 
-    for mode, did in tqdm(
-            itertools.chain(
-                itertools.product(["cls"], cc18_dids),
-                itertools.product(["reg"], ctr23_dids)
-            )
-        ):
+    pbar = tqdm(
+        itertools.chain(itertools.product(["cls"], cc18_dids), itertools.product(["reg"], ctr23_dids)),
+        total=(len(cc18_dids)+len(ctr23_dids))
+    )
+    for mode, did in pbar:
         if mode == "cls":
             tid = did_tid_mapping[did]
             dataset = TabZillaDataset(task_id=tid, fold=args.fold)
@@ -79,14 +78,14 @@ if __name__ == "__main__":
             dataset.prepare_data(".cache")
             dataset_name = dataset.openml_dataset.name
 
+        pbar.set_description(f"Running {dataset_name}")
+
         X_train, y_train = dataset.train_instances()
         X_val, y_val = dataset.val_instances()
 
         X_train = np.concatenate([X_train, X_val], axis=0)
         y_train = np.concatenate([y_train, y_val], axis=0)
         X_test, y_test = dataset.test_instances()
-
-        print(f"Running {dataset_name}")
 
         if mode == "cls":
             model = model_cls
@@ -112,7 +111,7 @@ if __name__ == "__main__":
 
             f1 = f1_score(y_test, np.argmax(pred_val, axis=1), average="weighted")
             acc = accuracy_score(y_test, np.argmax(pred_val, axis=1))
-            mse, correlation, r2 = None, None, None
+            mse, corr, r2 = None, None, None
 
         else:
             model = model_reg
@@ -135,9 +134,7 @@ if __name__ == "__main__":
             pred_val = scaler.inverse_transform(pred_val_scaled.reshape(-1, 1)).ravel()
 
             mse = np.mean((y_test - pred_val) ** 2)
-            correlation = scipy.stats.pearsonr(
-                y_test, pred_val.flatten()
-            )[0]
+            corr = scipy.stats.pearsonr(y_test, pred_val.flatten())[0]
             r2 = r2_score(y_test, pred_val)
             f1, acc, auc, pr = None, None, None, None
 
@@ -146,13 +143,15 @@ if __name__ == "__main__":
         results["f1"].append(f1)
         results["auc"].append(auc)
         results["mse"].append(mse)
-        results["corr"].append(correlation)
+        results["corr"].append(corr)
         results["r2"].append(r2)
         results["train_time"].append(train_time)
         results["inference_time"].append(inference_time)
+
+        print(f"\nDataset: {dataset_name}")
         print(f"X_train shape: {X_train.shape}, X_test shape: {X_test.shape}")
-        print(f"train_time {train_time}, inference_time {inference_time}")
-        print(f"acc {acc}, f1 {f1}, auc {auc}, mse {mse}, correlation {correlation}, r2 {r2}")
+        print(f"train_time: {train_time:.4f}s, inference_time: {inference_time:.4f}s")
+        print(f"acc {acc}, f1 {f1}, auc {auc}, mse {mse}, corr {corr}, r2 {r2}")
 
     df = pd.DataFrame(results)
 
