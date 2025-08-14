@@ -17,6 +17,7 @@ class TabDPTClassifier(TabDPTEstimator, ClassifierMixin):
         device: str = None,
         use_flash: bool = True,
         compile: bool = True,
+        dummy_class_permutation = False
     ):
         super().__init__(
             mode="cls",
@@ -25,6 +26,7 @@ class TabDPTClassifier(TabDPTEstimator, ClassifierMixin):
             use_flash=use_flash,
             compile=compile,
         )
+        self.dummy_permutation = dummy_class_permutation
 
     def fit(self, X: np.ndarray, y: np.ndarray):
         super().fit(X, y)
@@ -144,7 +146,7 @@ class TabDPTClassifier(TabDPTEstimator, ClassifierMixin):
 
         for inner_seed in tqdm(inner_seeds, desc="ensembles"):
             inner_seed = int(inner_seed)
-            perm = generate_random_permutation(self.num_classes, inner_seed)
+            perm = generate_random_permutation(self.num_classes, inner_seed, dummy=self.dummy_permutation)
             inv_perm = np.argsort(perm)
 
             logits = self.predict_proba(

@@ -30,6 +30,7 @@ if __name__ == "__main__":
     parser.add_argument("--inf-batch-size", type=int, default=512, help="Batch size for inference")
     parser.add_argument("--use-cpu", action="store_true", help="If true, use CPU for evalutation")
     parser.add_argument("--gpu-to-use", type=int, default=0, help="Which GPU to use")
+    parser.add_argument("--no-class-perm", action="store_true", help="If true, do not permute classes")
     args = parser.parse_args()
 
     if args.use_cpu:
@@ -60,11 +61,11 @@ if __name__ == "__main__":
         "train_time": [],
         "inference_time": [],
     }
-    model_cls = TabDPTClassifier(inf_batch_size=args.inf_batch_size, device=device)
+    model_cls = TabDPTClassifier(inf_batch_size=args.inf_batch_size, device=device, dummy_class_permutation=args.no_class_perm)
     model_reg = TabDPTRegressor(inf_batch_size=args.inf_batch_size, device=device)
 
     pbar = tqdm(
-        itertools.chain(itertools.product(["cls"], cc18_dids), itertools.product(["reg"], ctr23_dids)),
+        itertools.chain(itertools.product(["cls"], cc18_dids), itertools.product(["reg"], [])),
         total=(len(cc18_dids)+len(ctr23_dids))
     )
     for mode, did in pbar:
@@ -159,7 +160,7 @@ if __name__ == "__main__":
     datetime_string = datetime_string.replace("T", "_").replace(":", "-")
     csv_name = (
         f"results_{datetime_string}_context={args.context_size}_" \
-        f"fold={args.fold}_N={args.n_ensembles}_seed={args.seed}.csv"
+        f"fold={args.fold}_N={args.n_ensembles}_seed={args.seed}_classperm={not args.no_class_perm}.csv"
     )
     df.to_csv(csv_name, index=False)
 

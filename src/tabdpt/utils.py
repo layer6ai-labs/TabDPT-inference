@@ -8,12 +8,16 @@ import torch
 from torch.nn.attention import SDPBackend, sdpa_kernel
 
 
-def generate_random_permutation(N, seed=None):
+def generate_random_permutation(N, seed=None, dummy=False):
     generator = torch.Generator()
     if seed is not None:
         generator.manual_seed(seed)
 
-    return torch.randperm(N, generator=generator)
+    if dummy:
+        print("Dummy Permutation")
+        return torch.arange(N)  # Dummy permutation
+    else:
+        return torch.randperm(N, generator=generator)
 
 
 def flash_context(func):

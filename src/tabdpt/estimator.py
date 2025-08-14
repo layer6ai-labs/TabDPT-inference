@@ -1,5 +1,5 @@
 import json
-from enum import StrEnum, auto
+# from enum import StrEnum, auto
 
 import numpy as np
 import torch
@@ -21,9 +21,9 @@ _MODEL_NAME = f"tabdpt{_VERSION}.safetensors"
 CPU_INF_BATCH = 16
 
 
-class LongSchemaStrategy(StrEnum):
-    PCA = auto()
-    SUBSAMPLE = auto()
+# class LongSchemaStrategy(StrEnum):
+#     PCA = auto()
+#     SUBSAMPLE = auto()
 
 
 class TabDPTEstimator(BaseEstimator):
@@ -34,10 +34,10 @@ class TabDPTEstimator(BaseEstimator):
         device: str = None,
         use_flash: bool = True,
         compile: bool = True,
-        long_schema_strategy: LongSchemaStrategy = LongSchemaStrategy.PCA,
+        # long_schema_strategy: LongSchemaStrategy = LongSchemaStrategy.PCA,
     ):
         self.mode = mode
-        self.long_schema_strategy = long_schema_strategy
+        # self.long_schema_strategy = long_schema_strategy
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self.inf_batch_size = (
             inf_batch_size if self.device == "cuda" else min(inf_batch_size, CPU_INF_BATCH)
@@ -82,7 +82,7 @@ class TabDPTEstimator(BaseEstimator):
         self.y_train = y
         if (
             self.n_features > self.max_features
-            and self.long_schema_strategy == LongSchemaStrategy.PCA
+            # and self.long_schema_strategy == LongSchemaStrategy.PCA
         ):
             train_x = convert_to_torch_tensor(self.X_train).to(self.device).float()
             _, _, self.V = torch.pca_lowrank(train_x, q=min(train_x.shape[0], self.max_features))
@@ -105,15 +105,15 @@ class TabDPTEstimator(BaseEstimator):
 
         # Apply PCA or subsampling optionally to reduce the number of features
         if self.n_features > self.max_features:
-            if self.long_schema_strategy == LongSchemaStrategy.PCA:
-                train_x = train_x @ self.V
-                test_x = test_x @ self.V
-            elif self.long_schema_strategy == LongSchemaStrategy.SUBSAMPLE:
-                feat_perm = generate_random_permutation(train_x.shape[1], seed)
-                train_x = train_x[:, feat_perm][:, : self.model.encoder.num_features]
-                test_x = test_x[:, feat_perm][:, : self.model.encoder.num_features]
-            else:
-                raise Exception("Undefined method for handling long context.")
+            # if self.long_schema_strategy == LongSchemaStrategy.PCA:
+            train_x = train_x @ self.V
+            test_x = test_x @ self.V
+            # elif self.long_schema_strategy == LongSchemaStrategy.SUBSAMPLE:
+            #     feat_perm = generate_random_permutation(train_x.shape[1], seed)
+            #     train_x = train_x[:, feat_perm][:, : self.model.encoder.num_features]
+            #     test_x = test_x[:, feat_perm][:, : self.model.encoder.num_features]
+            # else:
+            #     raise Exception("Undefined method for handling long context.")
 
         if class_perm is not None:
             inv_perm = np.argsort(class_perm)
