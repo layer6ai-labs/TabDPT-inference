@@ -1,9 +1,14 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "tabdpt"
 version = "1.1.0"
-description = "TabDPT"
+description = "TabDPT: Scaling Tabular Foundation Models on Real Data"
 readme = "README.md"
 license = "Apache-2.0"
+license-files = ["LICEN[CS]E*"]
 requires-python = ">=3.11"
 dependencies = [
     "appdirs>=1.4.4",
@@ -18,3 +23,8 @@ dependencies = [
     "torch==2.7.1",
     "tqdm==4.67.1",
 ]
+
+[project.urls]
+Repository = "https://github.com/layer6ai-labs/TabDPT-inference"
+Paper = "https://arxiv.org/abs/2410.18164"
+Model = "https://huggingface.co/Layer6/TabDPT"

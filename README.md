@@ -161,7 +161,7 @@ TabDPT is trained on real-world tabular data and we observe scaling laws similar
 
 <p align="center">
 <img
-src="figures/scaling.png" width="50%">
+src="https://raw.githubusercontent.com/layer6ai-labs/TabDPT-inference/main/figures/scaling.png" width="50%">
 <br />
 <p>
 <b>Figure 1:</b> Increasing model or pre-training data size (number of cells) leads to consistent improvements predictable by power laws (fitted solid lines).
@@ -172,7 +172,7 @@ TabDPT also stands out in head-to-head model comparisons and is significantly fa
 
 <p align="center">
 <img
-src="figures/performance-comparison.png" width="100%">
+src="https://github.com/layer6ai-labs/TabDPT-inference/raw/main/figures/performance-comparison.png" width="100%">
 <br />
 <p>
 <b>Figure 2:</b> (<i>left</i>) Pairwise win-rate comparison in terms of classification/regression accuracy/R<sup>2</sup>. (<i>right</i>) Total runtime vs performance. TabDPT models are ordered by context size.
@@ -191,3 +191,5 @@ For full details, please see our paper [*TabDPT: Scaling Tabular Foundation Mode
   year={2024}
 }
 ```
+
+© Copyright 2025 The Toronto-Dominion Bank and/or its affiliates
