@@ -192,4 +192,4 @@ For full details, please see our paper [*TabDPT: Scaling Tabular Foundation Mode
 }
 ```
 
-© Copyright 2025 The Toronto-Dominion Bank and/or its affiliates
+© Copyright 2024-2025 The Toronto-Dominion Bank and/or its affiliates
