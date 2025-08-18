@@ -68,7 +68,7 @@ class TabDPTRegressor(TabDPTEstimator, RegressorMixin):
                     task=self.mode,
                 )
 
-                pred_list.append(pred.squeeze(dim=1))
+                pred_list.append(pred.squeeze(dim=0))
 
             return torch.cat(pred_list).squeeze().detach().cpu().float().numpy()
 
