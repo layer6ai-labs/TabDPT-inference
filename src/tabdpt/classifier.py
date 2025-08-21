@@ -124,7 +124,7 @@ class TabDPTClassifier(TabDPTEstimator, ClassifierMixin):
                     pred = torch.nn.functional.softmax(pred, dim=-1)
                     pred /= pred.sum(axis=-1, keepdims=True)  # numerical stability
 
-                pred_list.append(pred.squeeze(dim=1))
+                pred_list.append(pred.squeeze(dim=0))
             pred_val = torch.cat(pred_list, dim=0).squeeze().detach().cpu().float().numpy()
         return pred_val
 
