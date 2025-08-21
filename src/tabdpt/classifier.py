@@ -63,7 +63,7 @@ class TabDPTClassifier(TabDPTEstimator, ClassifierMixin):
         self,
         X: np.ndarray,
         temperature: float = 0.8,
-        context_size: int = 1024,
+        context_size: int = 2048,
         return_logits: bool = False,
         seed: int | None = None,
         class_perm: np.ndarray | None = None,
@@ -125,7 +125,7 @@ class TabDPTClassifier(TabDPTEstimator, ClassifierMixin):
                     pred = torch.nn.functional.softmax(pred, dim=-1)
                     pred /= pred.sum(axis=-1, keepdims=True)  # numerical stability
 
-                pred_list.append(pred.squeeze())
+                pred_list.append(pred.squeeze(dim=1))
             pred_val = torch.cat(pred_list, dim=0).squeeze().detach().cpu().float().numpy()
         return pred_val
 
@@ -134,7 +134,7 @@ class TabDPTClassifier(TabDPTEstimator, ClassifierMixin):
         X,
         n_ensembles: int = 8,
         temperature: float = 0.8,
-        context_size: int = 1024,
+        context_size: int = 2048,
         seed: int | None = None,
     ):
         root_ss = np.random.SeedSequence(seed)
@@ -168,7 +168,7 @@ class TabDPTClassifier(TabDPTEstimator, ClassifierMixin):
         X,
         n_ensembles: int = 8,
         temperature: float = 0.8,
-        context_size: int = 1024,
+        context_size: int = 2048,
         seed: int | None = None,
     ):
         if n_ensembles == 1:
