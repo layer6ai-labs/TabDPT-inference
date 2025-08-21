@@ -1,10 +1,10 @@
 import math
+from tqdm import tqdm
 
 import numpy as np
 import torch
 from scipy.special import softmax
 from sklearn.base import ClassifierMixin
-from tqdm import tqdm
 
 from .estimator import TabDPTEstimator
 from .utils import generate_random_permutation, pad_x
@@ -137,7 +137,6 @@ class TabDPTClassifier(TabDPTEstimator, ClassifierMixin):
         context_size: int = 1024,
         seed: int | None = None,
     ):
-
         root_ss = np.random.SeedSequence(seed)
         inner_seeds = root_ss.generate_state(n_ensembles)
         logit_cumsum = None
