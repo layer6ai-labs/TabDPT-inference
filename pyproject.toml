@@ -22,6 +22,7 @@ dependencies = [
     "scipy==1.15.3",
     "torch==2.7.1",
     "tqdm==4.67.1",
+    "rliable==1.2.0",
 ]
 
 [project.urls]
