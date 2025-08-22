@@ -79,9 +79,7 @@ class TabDPTEstimator(BaseEstimator):
         if self.compile:
             self.model = torch.compile(self.model)
 
-    def _prepare_prediction(
-        self, X: np.ndarray, seed: int | None = None, class_perm: np.ndarray | None = None
-    ):
+    def _prepare_prediction(self, X: np.ndarray, class_perm: np.ndarray | None = None):
         check_is_fitted(self)
         self.X_test = self.imputer.transform(X)
         self.X_test = self.scaler.transform(self.X_test)
@@ -91,12 +89,13 @@ class TabDPTEstimator(BaseEstimator):
             convert_to_torch_tensor(self.X_test).to(self.device).float(),
         )
 
-        # Apply PCA to reduce the number of features
+        # Apply PCA to reduce the number of features if necessary
         if self.n_features > self.max_features:
             train_x = train_x @ self.V
             test_x = test_x @ self.V
 
         if class_perm is not None:
+            assert self.mode == "cls", "class_perm only makes sense for classification"
             inv_perm = np.argsort(class_perm)
             train_y = train_y.to(torch.long)
             inv_perm = torch.as_tensor(inv_perm, device=train_y.device)
