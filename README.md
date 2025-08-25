@@ -181,6 +181,16 @@ src="https://github.com/layer6ai-labs/TabDPT-inference/raw/main/figures/performa
 
 For full details, please see our paper [*TabDPT: Scaling Tabular Foundation Models on Real Data*](https://arxiv.org/abs/2410.18164).
 
+## Reproducing TabDPT Paper Numbers
+
+It is impossible to exactly replicate the results of TabDPT between runs.
+
+However, running the `paper_evaluation.py` script will enable calculation of results similar to the paper. Running the following two commands and then averaging the results will achieve the desired outcome:
+```
+python paper_evaluation.py --fold 0
+python paper_evaluation.py --fold 1
+```
+
 
 ## Citation
 ```
