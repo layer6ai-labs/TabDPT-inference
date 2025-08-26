@@ -185,11 +185,14 @@ For full details, please see our paper [*TabDPT: Scaling Tabular Foundation Mode
 
 It is impossible to exactly replicate the results of TabDPT between runs.
 
-However, running the `paper_evaluation.py` script will enable calculation of results similar to the paper. Running the following two commands and then averaging the results will achieve the desired outcome:
+However, running the `paper_evaluation.py` script will enable calculation of results similar to the paper. Run the following two commands:
 ```
 python paper_evaluation.py --fold 0
 python paper_evaluation.py --fold 1
 ```
+and then use `notebooks/analysis.ipynb` with the resulting CSV outputs to reproduce the numbers (including confidence intervals) from the Appendix.
+
+You can do something similar to get the ranked table from this README and the paper but will need to also compute the baseline results beforehand (code not provided in this repository).
 
 
 ## Citation
