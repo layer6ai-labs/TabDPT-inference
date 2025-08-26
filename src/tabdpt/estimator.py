@@ -1,12 +1,10 @@
 import json
-from pathlib import Path
 
 import numpy as np
 import torch
 from huggingface_hub import hf_hub_download
 from omegaconf import OmegaConf
 from safetensors import safe_open
-from safetensors.torch import save_file
 from sklearn.base import BaseEstimator
 from sklearn.impute import SimpleImputer
 from sklearn.preprocessing import StandardScaler
@@ -28,11 +26,13 @@ class TabDPTEstimator(BaseEstimator):
         inf_batch_size: int = 512,
         device: str = None,
         use_flash: bool = True,
-        compile: bool = True,
+        compile: bool = True
     ):
         self.mode = mode
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
-        self.inf_batch_size = inf_batch_size if self.device == "cuda" else min(inf_batch_size, CPU_INF_BATCH)
+        self.inf_batch_size = (
+            inf_batch_size if self.device == "cuda" else min(inf_batch_size, CPU_INF_BATCH)
+        )
         self.use_flash = use_flash and self.device == "cuda"
 
         self.path = hf_hub_download(
@@ -79,7 +79,7 @@ class TabDPTEstimator(BaseEstimator):
         if self.compile:
             self.model = torch.compile(self.model)
 
-    def _prepare_prediction(self, X: np.ndarray):
+    def _prepare_prediction(self, X: np.ndarray, class_perm: np.ndarray | None = None):
         check_is_fitted(self)
         self.X_test = self.imputer.transform(X)
         self.X_test = self.scaler.transform(self.X_test)
@@ -89,8 +89,16 @@ class TabDPTEstimator(BaseEstimator):
             convert_to_torch_tensor(self.X_test).to(self.device).float(),
         )
 
-        # Apply PCA optionally to reduce the number of features
+        # Apply PCA to reduce the number of features if necessary
         if self.n_features > self.max_features:
             train_x = train_x @ self.V
             test_x = test_x @ self.V
+
+        if class_perm is not None:
+            assert self.mode == "cls", "class_perm only makes sense for classification"
+            inv_perm = np.argsort(class_perm)
+            train_y = train_y.to(torch.long)
+            inv_perm = torch.as_tensor(inv_perm, device=train_y.device)
+            train_y = inv_perm[train_y].to(torch.float)
+
         return train_x, train_y, test_x
