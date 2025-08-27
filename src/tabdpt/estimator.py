@@ -26,8 +26,20 @@ class TabDPTEstimator(BaseEstimator):
         inf_batch_size: int = 512,
         device: str = None,
         use_flash: bool = True,
-        compile: bool = True
+        compile: bool = True,
+        model_weight_path: str | None = None
     ):
+        """
+        Initializes the TabDPT Estimator
+        Args:
+            mode: Defines what mode the estimator is. One of {cls, reg} for classification and regression respectively
+            inf_batch_size: The batch size for inferencing
+            device: Specifies the computational device (e.g., CPU, GPU). Identical to https://docs.pytorch.org/docs/stable/generated/torch.cuda.device.html
+            use_flash: Specifies whether to use flash attention or not
+            compile: Specifies whether to compile the model with torch before inference
+            model_weight_path: path on file system specifying the model weights. If no path is specified, then the model weights are downloaded from HuggingFace
+
+        """
         self.mode = mode
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self.inf_batch_size = (
@@ -35,10 +47,13 @@ class TabDPTEstimator(BaseEstimator):
         )
         self.use_flash = use_flash and self.device == "cuda"
 
-        self.path = hf_hub_download(
-            repo_id="Layer6/TabDPT",
-            filename=_MODEL_NAME,
-        )
+        if model_weight_path:
+            self.path = model_weight_path
+        else:
+            self.path = hf_hub_download(
+                repo_id="Layer6/TabDPT",
+                filename=_MODEL_NAME,
+            )
 
         with safe_open(self.path, framework="pt", device=self.device) as f:
             meta = f.metadata()

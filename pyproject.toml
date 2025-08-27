@@ -32,3 +32,8 @@ dependencies = [
 Repository = "https://github.com/layer6ai-labs/TabDPT-inference"
 Paper = "https://arxiv.org/abs/2410.18164"
 Model = "https://huggingface.co/Layer6/TabDPT"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4.1",
+]
