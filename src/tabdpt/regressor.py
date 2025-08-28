@@ -16,6 +16,7 @@ class TabDPTRegressor(TabDPTEstimator, RegressorMixin):
         device: str = None,
         use_flash: bool = True,
         compile: bool = True,
+        model_weight_path: str | None = None
     ):
         super().__init__(
             mode="reg",
@@ -23,6 +24,7 @@ class TabDPTRegressor(TabDPTEstimator, RegressorMixin):
             device=device,
             use_flash=use_flash,
             compile=compile,
+            model_weight_path=model_weight_path
         )
 
     @torch.no_grad()

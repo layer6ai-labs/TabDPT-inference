@@ -17,6 +17,7 @@ class TabDPTClassifier(TabDPTEstimator, ClassifierMixin):
         device: str = None,
         use_flash: bool = True,
         compile: bool = True,
+        model_weight_path: str | None = None
     ):
         super().__init__(
             mode="cls",
@@ -24,6 +25,7 @@ class TabDPTClassifier(TabDPTEstimator, ClassifierMixin):
             device=device,
             use_flash=use_flash,
             compile=compile,
+            model_weight_path=model_weight_path
         )
 
     def fit(self, X: np.ndarray, y: np.ndarray):
