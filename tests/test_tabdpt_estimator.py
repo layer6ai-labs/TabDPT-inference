@@ -1,6 +1,6 @@
 from unittest.mock import MagicMock, patch
-import pytest
 from tabdpt import estimator
+
 
 @patch('tabdpt.estimator.hf_hub_download', return_value="my/hf/path")
 @patch('tabdpt.estimator.safe_open')
@@ -16,7 +16,7 @@ def test_model_weight_path_set_or_download_from_hf(
     mock_file.keys.return_value = ['tensor1']
     mock_file.get_tensor.return_value = MagicMock()
     mock_safe_open.return_value.__enter__.return_value = mock_file
-    
+
     # load from local path
     local_path = "/test/path/model.safetensors"
     dpt_estimator = estimator.TabDPTEstimator(mode="cls", model_weight_path=local_path)
@@ -30,4 +30,3 @@ def test_model_weight_path_set_or_download_from_hf(
         filename=estimator._MODEL_NAME,
     )
     assert dpt_estimator.path == "my/hf/path"
-
