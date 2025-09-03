@@ -17,7 +17,7 @@ This repository provides lightweight interface code to generate predictions on n
 
 TabDPT is available on [Hugging Face](https://huggingface.co/Layer6/TabDPT).
 
-To set up this repo, first ensure you have `python >= 3.11`. Then, run the following:
+To set up this repo, first ensure you have Python 3.10 or 3.11. Then, run the following:
 ```
 git clone git@github.com:layer6ai-labs/TabDPT.git
 cd TabDPT
@@ -183,9 +183,15 @@ For full details, please see our paper [*TabDPT: Scaling Tabular Foundation Mode
 
 ## Reproducing TabDPT Paper Numbers
 
-It is impossible to exactly replicate the results of TabDPT between runs.
+It is impossible to exactly replicate the results of TabDPT between runs, but this section describes how to generate results using the same evaluation approach as in the paper.
 
-However, running the `paper_evaluation.py` script will enable calculation of results similar to the paper. Run the following two commands:
+To install the dependency versions used in the paper, run
+```
+pip install .[reproduce-results]
+```
+This requires Python 3.11.
+
+Running the `paper_evaluation.py` script will enable calculation of results similar to the paper. Run the following two commands:
 ```
 python paper_evaluation.py --fold 0
 python paper_evaluation.py --fold 1
