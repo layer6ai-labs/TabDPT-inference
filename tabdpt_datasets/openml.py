@@ -65,7 +65,7 @@ class OpenMLDataset(Dataset):
 
     @retry(
         stop=stop_after_attempt(3),
-        # Wait strategy: Wait exponentially, starting at 0.5s, with a max of 10s
+        # Wait strategy: Wait exponentially, starting at 0.5s, with a max of 30s
         wait=wait_exponential(multiplier=0.5, max=30),
         retry=retry_if_exception_type(openml.exceptions.OpenMLServerError),
     )
