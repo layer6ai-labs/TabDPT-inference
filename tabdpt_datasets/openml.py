@@ -10,6 +10,7 @@ import numpy as np
 import openml
 import pandas as pd
 from sklearn.preprocessing import LabelEncoder, OrdinalEncoder
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from .dataset import Dataset
 
@@ -62,6 +63,12 @@ class OpenMLDataset(Dataset):
             raise ValueError("Data not loaded yet")
         return self._openml_dataset
 
+    @retry(
+        stop=stop_after_attempt(3),
+        # Wait strategy: Wait exponentially, starting at 0.5s, with a max of 30s
+        wait=wait_exponential(multiplier=0.5, max=30),
+        retry=retry_if_exception_type(openml.exceptions.OpenMLServerError),
+    )
     def prepare_data(self, download_dir):
 
         openml.config.set_root_cache_directory(os.path.join(download_dir, "openml_cache"))
