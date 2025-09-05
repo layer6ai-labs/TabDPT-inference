@@ -22,6 +22,12 @@ To set up this repo, first ensure you have `python >= 3.11`. Then, run the follo
 git clone git@github.com:layer6ai-labs/TabDPT.git
 cd TabDPT
 pip install -e .
+pip install --group dev
+```
+
+Alternatively, if you are using a package manager such as `uv`, you can run
+```
+uv sync
 ```
 
 You may also need a C++ compiler such as `g++` for building dependencies. On Ubuntu, you can install it with:
