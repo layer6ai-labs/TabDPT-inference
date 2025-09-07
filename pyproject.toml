@@ -35,7 +35,7 @@ reproduce-results = [
     "omegaconf==2.3.0",
     "scikit-learn==1.7.0",
     "scipy==1.15.3",
-    "torch==2.7.1",
+    "torch==2.8.0",
 ]
 
 [project.urls]
