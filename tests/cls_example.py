@@ -10,5 +10,5 @@ X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.33, random
 
 model = TabDPTClassifier()
 model.fit(X_train, y_train)
-y_pred = model.predict(X_test, n_ensembles=8, temperature=0.8, context_size=2048, seed=42)
+y_pred = model.predict(X_test, n_ensembles=8, temperature=0.3, context_size=2048, seed=42)
 print(accuracy_score(y_test, y_pred))
