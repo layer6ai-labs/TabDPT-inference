@@ -64,7 +64,7 @@ class TabDPTClassifier(TabDPTEstimator, ClassifierMixin):
     def predict_proba(
         self,
         X: np.ndarray,
-        temperature: float = 0.8,
+        temperature: float = 0.3,
         context_size: int = 2048,
         return_logits: bool = False,
         seed: int | None = None,
@@ -135,7 +135,7 @@ class TabDPTClassifier(TabDPTEstimator, ClassifierMixin):
         self,
         X,
         n_ensembles: int = 8,
-        temperature: float = 0.8,
+        temperature: float = 0.3,
         context_size: int = 2048,
         seed: int | None = None,
     ):
@@ -169,7 +169,7 @@ class TabDPTClassifier(TabDPTEstimator, ClassifierMixin):
         self,
         X,
         n_ensembles: int = 8,
-        temperature: float = 0.8,
+        temperature: float = 0.3,
         context_size: int = 2048,
         seed: int | None = None,
     ):
