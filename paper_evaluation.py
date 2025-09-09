@@ -8,8 +8,9 @@ from datetime import datetime
 import numpy as np
 import pandas as pd
 import scipy
-from sklearn.metrics import accuracy_score, f1_score, roc_auc_score, r2_score
+from sklearn.metrics import accuracy_score, f1_score, log_loss, roc_auc_score, r2_score
 from sklearn.preprocessing import StandardScaler
+from rliable import metrics
 
 from tabdpt import TabDPTClassifier
 from tabdpt import TabDPTRegressor
@@ -30,6 +31,7 @@ if __name__ == "__main__":
     parser.add_argument("--inf-batch-size", type=int, default=512, help="Batch size for inference")
     parser.add_argument("--use-cpu", action="store_true", help="If true, use CPU for evalutation")
     parser.add_argument("--gpu-to-use", type=int, default=0, help="Which GPU to use")
+    parser.add_argument("--results-folder", type=str, default="eval_output", help="Parent directory to store results")
     args = parser.parse_args()
 
     if args.use_cpu:
@@ -54,6 +56,7 @@ if __name__ == "__main__":
         "acc": [],
         "f1": [],
         "auc": [],
+        "log_loss": [],
         "mse": [],
         "corr": [],
         "r2": [],
@@ -111,6 +114,7 @@ if __name__ == "__main__":
 
             f1 = f1_score(y_test, np.argmax(pred_val, axis=1), average="weighted")
             acc = accuracy_score(y_test, np.argmax(pred_val, axis=1))
+            ce_loss = log_loss(y_test, pred_val)
             mse, corr, r2 = None, None, None
 
         else:
@@ -136,12 +140,13 @@ if __name__ == "__main__":
             mse = np.mean((y_test - pred_val) ** 2)
             corr = scipy.stats.pearsonr(y_test, pred_val.flatten())[0]
             r2 = r2_score(y_test, pred_val)
-            f1, acc, auc, pr = None, None, None, None
+            f1, acc, auc, ce_loss = None, None, None, None
 
         results["name"].append(dataset_name)
         results["acc"].append(acc)
         results["f1"].append(f1)
         results["auc"].append(auc)
+        results["log_loss"].append(ce_loss)
         results["mse"].append(mse)
         results["corr"].append(corr)
         results["r2"].append(r2)
@@ -151,7 +156,11 @@ if __name__ == "__main__":
         print(f"\nDataset: {dataset_name}")
         print(f"X_train shape: {X_train.shape}, X_test shape: {X_test.shape}")
         print(f"train_time: {train_time:.4f}s, inference_time: {inference_time:.4f}s")
-        print(f"acc {acc}, f1 {f1}, auc {auc}, mse {mse}, corr {corr}, r2 {r2}")
+
+        if mode == "cls":
+            print(f"acc {acc}, f1 {f1}, auc {auc}, loss {ce_loss}")
+        else:
+            print(f"mse {mse}, corr {corr}, r2 {r2}")
 
     df = pd.DataFrame(results)
 
@@ -161,7 +170,15 @@ if __name__ == "__main__":
         f"results_{datetime_string}_context={args.context_size}_" \
         f"fold={args.fold}_N={args.n_ensembles}_seed={args.seed}.csv"
     )
-    df.to_csv(csv_name, index=False)
 
-    print(f"Fold {args.fold}, N={args.n_ensembles}:")
-    print(df[["acc", "auc", "corr", "r2"]].mean())
+    os.makedirs(args.results_folder, exist_ok=True)
+    df.to_csv(os.path.join(args.results_folder, csv_name), index=False)
+
+    def robust_iqm(x):
+        try:
+            return metrics.aggregate_iqm(x)
+        except TypeError:
+            return None
+
+    print(f"IQM for Fold {args.fold}, N={args.n_ensembles}, T={args.temperature}:")
+    print(df[["acc", "auc", "corr", "r2"]].apply(lambda x: robust_iqm(x)))
