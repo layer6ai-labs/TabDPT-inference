@@ -176,6 +176,7 @@ if __name__ == "__main__":
 
     def robust_iqm(x):
         try:
+            x = x[~np.isnan(x)]
             return metrics.aggregate_iqm(x)
         except TypeError:
             return None
