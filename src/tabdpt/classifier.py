@@ -4,6 +4,8 @@ import numpy as np
 import torch
 from scipy.special import softmax
 from sklearn.base import ClassifierMixin
+from sklearn.metrics import log_loss
+from sklearn.model_selection import StratifiedKFold
 from tqdm import tqdm
 
 from .estimator import TabDPTEstimator
@@ -27,8 +29,43 @@ class TabDPTClassifier(TabDPTEstimator, ClassifierMixin):
             compile=compile,
             model_weight_path=model_weight_path,
         )
+        self.temperature = 0.3
 
-    def fit(self, X: np.ndarray, y: np.ndarray):
+    def fit(
+        self,
+        X: np.ndarray,
+        y: np.ndarray,
+        *,
+        temp_grid: list = [x / 10 for x in range(1, 13)],
+        autotune_temp: bool = True,
+        autotune_folds: int = 5,
+    ):
+        if autotune_temp:
+            skf = StratifiedKFold(n_splits=autotune_folds, shuffle=True, random_state=42)
+            all_logits = []
+            all_targets = []
+
+            for tr_idx, va_idx in skf.split(X, y):
+                X_tr, y_tr = X[tr_idx], y[tr_idx]
+                X_va, y_va = X[va_idx], y[va_idx]
+                super().fit(X_tr, y_tr)
+                self.num_classes = len(np.unique(self.y_train))
+                ctx = max(1, min(2048, max(1, len(X_tr) - 1)))
+                logits = self.predict_proba(X_va, return_logits=True, context_size=ctx)
+                logits = np.asarray(logits)
+                all_logits.append(logits)
+                all_targets.append(y_va)
+
+            logits_cv = np.concatenate(all_logits, axis=0)
+            y_cv = np.concatenate(all_targets, axis=0)
+
+            losses = []
+            for t in temp_grid:
+                probs = softmax(logits_cv / t, axis=-1)
+                losses.append(log_loss(y_cv, probs))
+            print(temp_grid)
+            print(losses)
+            self.temperature = float(temp_grid[int(np.argmin(losses))])
         super().fit(X, y)
         self.num_classes = len(np.unique(self.y_train))
         assert self.num_classes > 1, "Number of classes must be greater than 1"
@@ -60,12 +97,14 @@ class TabDPTClassifier(TabDPTEstimator, ClassifierMixin):
     def predict_proba(
         self,
         X: np.ndarray,
-        temperature: float = 0.8,
+        temperature: float | None = None,
         context_size: int = 2048,
         return_logits: bool = False,
         seed: int | None = None,
         class_perm: np.ndarray | None = None,
     ):
+        if temperature is None:
+            temperature = self.temperature
         train_x, train_y, test_x = self._prepare_prediction(X, class_perm=class_perm)
 
         if seed is not None:
@@ -133,11 +172,13 @@ class TabDPTClassifier(TabDPTEstimator, ClassifierMixin):
         self,
         X,
         n_ensembles: int = 8,
-        temperature: float = 0.8,
+        temperature: float | None = None,
         context_size: int = 2048,
         permute_classes: bool = True,
         seed: int | None = None,
     ):
+        if temperature is None:
+            temperature = self.temperature
         root_ss = np.random.SeedSequence(seed)
         inner_seeds = root_ss.generate_state(n_ensembles)
         logit_cumsum = None
@@ -170,19 +211,25 @@ class TabDPTClassifier(TabDPTEstimator, ClassifierMixin):
         self,
         X,
         n_ensembles: int = 8,
-        temperature: float = 0.8,
+        temperature: float | None = None,
         context_size: int = 2048,
         permute_classes: bool = True,
+        return_probs: bool = False,
         seed: int | None = None,
     ):
+        if temperature is None:
+            temperature = self.temperature
         if n_ensembles == 1:
-            return self.predict_proba(X, temperature=temperature, context_size=context_size, seed=seed).argmax(axis=-1)
+            out = self.predict_proba(X, temperature=temperature, context_size=context_size, seed=seed)
         else:
-            return self.ensemble_predict_proba(
+            out = self.ensemble_predict_proba(
                 X,
                 n_ensembles=n_ensembles,
                 temperature=temperature,
                 context_size=context_size,
                 permute_classes=permute_classes,
                 seed=seed,
-            ).argmax(axis=-1)
+            )
+        if not return_probs:
+            out = out.argmax(axis=-1)
+        return out
