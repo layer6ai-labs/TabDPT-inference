@@ -8,7 +8,8 @@ import numpy as np
 import pandas as pd
 import scipy
 from rliable import metrics
-from sklearn.metrics import accuracy_score, f1_score, log_loss, r2_score, roc_auc_score
+from sklearn.metrics import (accuracy_score, f1_score, log_loss, r2_score,
+                             roc_auc_score)
 from sklearn.preprocessing import StandardScaler
 from tqdm import tqdm
 
