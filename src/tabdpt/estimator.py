@@ -27,7 +27,7 @@ class TabDPTEstimator(BaseEstimator):
         device: str = None,
         use_flash: bool = True,
         compile: bool = True,
-        model_weight_path: str | None = None
+        model_weight_path: str | None = None,
     ):
         """
         Initializes the TabDPT Estimator
@@ -42,9 +42,7 @@ class TabDPTEstimator(BaseEstimator):
         """
         self.mode = mode
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
-        self.inf_batch_size = (
-            inf_batch_size if self.device == "cuda" else min(inf_batch_size, CPU_INF_BATCH)
-        )
+        self.inf_batch_size = inf_batch_size if self.device == "cuda" else min(inf_batch_size, CPU_INF_BATCH)
         self.use_flash = use_flash and self.device == "cuda"
 
         if model_weight_path:

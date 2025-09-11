@@ -1,5 +1,3 @@
-import os
-import random
 from functools import wraps
 
 import faiss

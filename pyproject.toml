@@ -9,7 +9,7 @@ description = "TabDPT: Scaling Tabular Foundation Models on Real Data"
 readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICEN[CS]E*"]
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
     "appdirs>=1.4.4,<2.0",
     "faiss-cpu>=1.11.0,<2.0",

@@ -1,8 +1,8 @@
 import gzip
 import json
 import os
-import zipfile
 import warnings
+import zipfile
 from pathlib import Path
 
 import gdown
@@ -169,14 +169,9 @@ class OpenMLDataset(Dataset):
 class TabZillaDataset(Dataset):
     @staticmethod
     def all_names():
-       return TABZILLA_NAME_LIST
+        return TABZILLA_NAME_LIST
 
-    def __init__(
-            self,
-            name: str | None = None,
-            task_id: int | None = None,
-            fold: int = 0
-        ):
+    def __init__(self, name: str | None = None, task_id: int | None = None, fold: int = 0):
         super().__init__(name)
 
         # check at least one of name or task_id is provided

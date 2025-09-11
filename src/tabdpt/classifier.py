@@ -1,10 +1,10 @@
 import math
-from tqdm import tqdm
 
 import numpy as np
 import torch
 from scipy.special import softmax
 from sklearn.base import ClassifierMixin
+from tqdm import tqdm
 
 from .estimator import TabDPTEstimator
 from .utils import generate_random_permutation, pad_x
@@ -17,7 +17,7 @@ class TabDPTClassifier(TabDPTEstimator, ClassifierMixin):
         device: str = None,
         use_flash: bool = True,
         compile: bool = True,
-        model_weight_path: str | None = None
+        model_weight_path: str | None = None,
     ):
         super().__init__(
             mode="cls",
@@ -25,7 +25,7 @@ class TabDPTClassifier(TabDPTEstimator, ClassifierMixin):
             device=device,
             use_flash=use_flash,
             compile=compile,
-            model_weight_path=model_weight_path
+            model_weight_path=model_weight_path,
         )
 
     def fit(self, X: np.ndarray, y: np.ndarray):
@@ -46,15 +46,11 @@ class TabDPTClassifier(TabDPTEstimator, ClassifierMixin):
             )
             digit_preds.append(pred.float())
 
-        full_pred = torch.zeros(
-            (X_test.shape[0], X_test.shape[1], self.num_classes), device=X_train.device
-        )
+        full_pred = torch.zeros((X_test.shape[0], X_test.shape[1], self.num_classes), device=X_train.device)
         for class_idx in range(self.num_classes):
             class_pred = torch.zeros_like(digit_preds[0][:, :, 0])
             for digit_idx, digit_pred in enumerate(digit_preds):
-                digit_value = (
-                    class_idx // (self.max_num_classes**digit_idx)
-                ) % self.max_num_classes
+                digit_value = (class_idx // (self.max_num_classes**digit_idx)) % self.max_num_classes
                 class_pred += digit_pred[:, :, digit_value]
             full_pred[:, :, class_idx] = class_pred.transpose(0, 1)
 
@@ -129,6 +125,7 @@ class TabDPTClassifier(TabDPTEstimator, ClassifierMixin):
 
                 pred_list.append(pred.squeeze(dim=0))
             pred_val = torch.cat(pred_list, dim=0).squeeze().detach().cpu().float().numpy()
+
         return pred_val
 
     def ensemble_predict_proba(
@@ -137,6 +134,7 @@ class TabDPTClassifier(TabDPTEstimator, ClassifierMixin):
         n_ensembles: int = 8,
         temperature: float = 0.3,
         context_size: int = 2048,
+        permute_classes: bool = True,
         seed: int | None = None,
     ):
         root_ss = np.random.SeedSequence(seed)
@@ -145,7 +143,9 @@ class TabDPTClassifier(TabDPTEstimator, ClassifierMixin):
 
         for inner_seed in tqdm(inner_seeds, desc="ensembles"):
             inner_seed = int(inner_seed)
-            perm = generate_random_permutation(self.num_classes, inner_seed)
+            perm = torch.arange(self.num_classes)
+            if permute_classes:
+                perm = generate_random_permutation(self.num_classes, inner_seed)
             inv_perm = np.argsort(perm)
 
             logits = self.predict_proba(
@@ -171,17 +171,17 @@ class TabDPTClassifier(TabDPTEstimator, ClassifierMixin):
         n_ensembles: int = 8,
         temperature: float = 0.3,
         context_size: int = 2048,
+        permute_classes: bool = True,
         seed: int | None = None,
     ):
         if n_ensembles == 1:
-            return self.predict_proba(
-                X, temperature=temperature, context_size=context_size, seed=seed
-            ).argmax(axis=-1)
+            return self.predict_proba(X, temperature=temperature, context_size=context_size, seed=seed).argmax(axis=-1)
         else:
             return self.ensemble_predict_proba(
                 X,
                 n_ensembles=n_ensembles,
                 temperature=temperature,
                 context_size=context_size,
+                permute_classes=permute_classes,
                 seed=seed,
             ).argmax(axis=-1)
