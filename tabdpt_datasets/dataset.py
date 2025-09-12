@@ -104,7 +104,7 @@ class Dataset(ABC):
 
         lin_coeffs = []
         for i in range(X.shape[1]):
-            col = np.nan_to_num(X[:,i])
+            col = np.nan_to_num(X[:, i])
             if np.all(np.isclose(col, col[0])):
                 lin_coeffs.append(None)
                 continue

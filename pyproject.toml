@@ -31,7 +31,7 @@ dependencies = [
 [project.optional-dependencies]
 reproduce-results = [
     "faiss-cpu==1.11.0",
-    "numpy==2.3.0",
+    "numpy==2.3.0;python_version>='3.11'",
     "omegaconf==2.3.0",
     "scikit-learn==1.7.0",
     "scipy==1.15.3",

@@ -1,21 +1,19 @@
-import os
 import argparse
 import itertools
-from time import time
-from tqdm import tqdm
+import os
 from datetime import datetime
+from time import time
 
 import numpy as np
 import pandas as pd
 import scipy
-from sklearn.metrics import accuracy_score, f1_score, log_loss, roc_auc_score, r2_score
-from sklearn.preprocessing import StandardScaler
 from rliable import metrics
+from sklearn.metrics import accuracy_score, f1_score, log_loss, r2_score, roc_auc_score
+from sklearn.preprocessing import StandardScaler
+from tqdm import tqdm
 
-from tabdpt import TabDPTClassifier
-from tabdpt import TabDPTRegressor
+from tabdpt import TabDPTClassifier, TabDPTRegressor
 from tabdpt_datasets.openml import OpenMLDataset, TabZillaDataset
-
 
 CLS_DATASET_PATH = "tabdpt_datasets/data_splits/cls_datasets.csv"
 REG_DATASET_PATH = "tabdpt_datasets/data_splits/reg_datasets.csv"
@@ -31,7 +29,7 @@ if __name__ == "__main__":
     parser.add_argument("--inf-batch-size", type=int, default=512, help="Batch size for inference")
     parser.add_argument("--use-cpu", action="store_true", help="If true, use CPU for evalutation")
     parser.add_argument("--gpu-to-use", type=int, default=0, help="Which GPU to use")
-    parser.add_argument("--results-folder", type=str, default="eval_output", help="Parent directory to store results")
+    parser.add_argument("--results-folder", type=str, default="eval_output", help="Parent results directory")
     args = parser.parse_args()
 
     if args.use_cpu:
@@ -68,7 +66,7 @@ if __name__ == "__main__":
 
     pbar = tqdm(
         itertools.chain(itertools.product(["cls"], cc18_dids), itertools.product(["reg"], ctr23_dids)),
-        total=(len(cc18_dids)+len(ctr23_dids))
+        total=(len(cc18_dids) + len(ctr23_dids)),
     )
     for mode, did in pbar:
         if mode == "cls":
@@ -103,7 +101,7 @@ if __name__ == "__main__":
                 temperature=args.temperature,
                 context_size=args.context_size,
                 n_ensembles=args.n_ensembles,
-                seed=args.seed
+                seed=args.seed,
             )
             inference_time = time() - t1
 
@@ -129,10 +127,7 @@ if __name__ == "__main__":
 
             t1 = time()
             pred_val_scaled = model.predict(
-                X_test,
-                context_size=args.context_size,
-                n_ensembles=args.n_ensembles,
-                seed=args.seed
+                X_test, context_size=args.context_size, n_ensembles=args.n_ensembles, seed=args.seed
             )
             inference_time = time() - t1
             pred_val = scaler.inverse_transform(pred_val_scaled.reshape(-1, 1)).ravel()
@@ -167,7 +162,7 @@ if __name__ == "__main__":
     datetime_string = datetime.now().isoformat(timespec="seconds")
     datetime_string = datetime_string.replace("T", "_").replace(":", "-")
     csv_name = (
-        f"results_{datetime_string}_context={args.context_size}_" \
+        f"results_{datetime_string}_context={args.context_size}_"
         f"fold={args.fold}_N={args.n_ensembles}_seed={args.seed}.csv"
     )
 

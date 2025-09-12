@@ -16,7 +16,7 @@ class TabDPTRegressor(TabDPTEstimator, RegressorMixin):
         device: str = None,
         use_flash: bool = True,
         compile: bool = True,
-        model_weight_path: str | None = None
+        model_weight_path: str | None = None,
     ):
         super().__init__(
             mode="reg",
@@ -24,7 +24,7 @@ class TabDPTRegressor(TabDPTEstimator, RegressorMixin):
             device=device,
             use_flash=use_flash,
             compile=compile,
-            model_weight_path=model_weight_path
+            model_weight_path=model_weight_path,
         )
 
     @torch.no_grad()
@@ -74,9 +74,7 @@ class TabDPTRegressor(TabDPTEstimator, RegressorMixin):
 
             return torch.cat(pred_list).squeeze().detach().cpu().float().numpy()
 
-    def _ensemble_predict(
-        self, X: np.ndarray, n_ensembles: int = 8, context_size: int = 2048, seed: int | None = None
-    ):
+    def _ensemble_predict(self, X: np.ndarray, n_ensembles: int = 8, context_size: int = 2048, seed: int | None = None):
         prediction_cumsum = 0
         generator = np.random.SeedSequence(seed)
         for _, inner_seed in tqdm(zip(range(n_ensembles), generator.generate_state(n_ensembles))):
@@ -84,12 +82,8 @@ class TabDPTRegressor(TabDPTEstimator, RegressorMixin):
             prediction_cumsum += self._predict(X, context_size=context_size, seed=inner_seed)
         return prediction_cumsum / n_ensembles
 
-    def predict(
-        self, X: np.ndarray, n_ensembles: int = 8, context_size: int = 2048, seed: int | None = None
-    ):
+    def predict(self, X: np.ndarray, n_ensembles: int = 8, context_size: int = 2048, seed: int | None = None):
         if n_ensembles == 1:
             return self._predict(X, context_size=context_size, seed=seed)
         else:
-            return self._ensemble_predict(
-                X, n_ensembles=n_ensembles, context_size=context_size, seed=seed
-            )
+            return self._ensemble_predict(X, n_ensembles=n_ensembles, context_size=context_size, seed=seed)
