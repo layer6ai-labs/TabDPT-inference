@@ -29,12 +29,7 @@ if __name__ == "__main__":
     parser.add_argument("--inf-batch-size", type=int, default=512, help="Batch size for inference")
     parser.add_argument("--use-cpu", action="store_true", help="If true, use CPU for evalutation")
     parser.add_argument("--gpu-to-use", type=int, default=0, help="Which GPU to use")
-    parser.add_argument(
-        "--results-folder",
-        type=str,
-        default="eval_output",
-        help="Parent directory to store results",
-    )
+    parser.add_argument("--results-folder", type=str, default="eval_output", help="Parent results directory")
     args = parser.parse_args()
 
     if args.use_cpu:
