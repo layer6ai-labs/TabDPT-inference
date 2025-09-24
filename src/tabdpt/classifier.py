@@ -88,9 +88,10 @@ class TabDPTClassifier(TabDPTEstimator, ClassifierMixin):
             else:
                 pred = self._predict_large_cls(X_train, X_test, y_train)
 
-            pred = pred[..., :self.num_classes] / temperature
-            pred = torch.nn.functional.softmax(pred.float(), dim=-1)
-            pred_val = pred.squeeze().detach().cpu().numpy()
+            if not return_logits:
+                pred = pred[..., :self.num_classes] / temperature
+                pred = torch.nn.functional.softmax(pred.float(), dim=-1)
+            pred_val = pred.float().squeeze().detach().cpu().numpy()
         else:
             pred_list = []
             for b in range(math.ceil(len(self.X_test) / self.inf_batch_size)):
