@@ -10,8 +10,7 @@ import numpy as np
 import openml
 import pandas as pd
 from sklearn.preprocessing import LabelEncoder, OrdinalEncoder
-from tenacity import (retry, retry_if_exception_type, stop_after_attempt,
-                      wait_exponential)
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from .dataset import Dataset
 

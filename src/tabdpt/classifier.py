@@ -58,13 +58,11 @@ class TabDPTClassifier(TabDPTEstimator, ClassifierMixin):
 
             logits_cv = np.concatenate(all_logits, axis=0)
             y_cv = np.concatenate(all_targets, axis=0)
-
+            C = logits_cv.shape[-1]
             losses = []
             for t in temp_grid:
-                probs = softmax(logits_cv / t, axis=-1)
-                losses.append(log_loss(y_cv, probs))
-            print(temp_grid)
-            print(losses)
+                probs = softmax(logits_cv / float(t), axis=-1)
+                losses.append(log_loss(y_cv, probs, labels=np.arange(C)))
             self.temperature = float(temp_grid[int(np.argmin(losses))])
         super().fit(X, y)
         self.num_classes = len(np.unique(self.y_train))
@@ -130,7 +128,7 @@ class TabDPTClassifier(TabDPTEstimator, ClassifierMixin):
             if not return_logits:
                 pred = pred[..., :self.num_classes] / temperature
                 pred = torch.nn.functional.softmax(pred.float(), dim=-1)
-            pred_val = pred.float().squeeze().detach().cpu().numpy()
+            pred_val = pred.squeeze().detach().cpu().numpy()
         else:
             pred_list = []
             for b in range(math.ceil(len(self.X_test) / self.inf_batch_size)):
@@ -161,7 +159,6 @@ class TabDPTClassifier(TabDPTEstimator, ClassifierMixin):
                 if not return_logits:
                     pred = pred[..., :self.num_classes] / temperature
                     pred = torch.nn.functional.softmax(pred, dim=-1)
-                    pred /= pred.sum(axis=-1, keepdims=True)  # numerical stability
 
                 pred_list.append(pred.squeeze(dim=0))
             pred_val = torch.cat(pred_list, dim=0).squeeze().detach().cpu().float().numpy()
