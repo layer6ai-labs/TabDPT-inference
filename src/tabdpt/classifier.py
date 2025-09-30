@@ -29,7 +29,7 @@ class TabDPTClassifier(TabDPTEstimator, ClassifierMixin):
             compile=compile,
             model_weight_path=model_weight_path,
         )
-        self.temperature = 0.3
+        self.temperature = 0.8
 
     def fit(
         self,
@@ -128,7 +128,7 @@ class TabDPTClassifier(TabDPTEstimator, ClassifierMixin):
             if not return_logits:
                 pred = pred[..., :self.num_classes] / temperature
                 pred = torch.nn.functional.softmax(pred.float(), dim=-1)
-            pred_val = pred.squeeze().detach().cpu().numpy()
+            pred_val = pred.float().squeeze().detach().cpu().numpy()
         else:
             pred_list = []
             for b in range(math.ceil(len(self.X_test) / self.inf_batch_size)):

@@ -10,6 +10,7 @@ X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.33, random
 
 model = TabDPTClassifier()
 model.fit(X_train, y_train, autotune_temp=True)
+print("Selected Temp: ", model.temperature)
 
 accs = []
 lls = []
