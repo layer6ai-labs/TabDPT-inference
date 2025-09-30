@@ -1,4 +1,5 @@
 import json
+from typing import Literal
 
 import numpy as np
 import torch
@@ -16,13 +17,22 @@ from .utils import FAISS, convert_to_torch_tensor
 # Constants for model caching and download
 _VERSION = "1_1"
 _MODEL_NAME = f"tabdpt{_VERSION}.safetensors"
+_HF_REPO_ID = "Layer6/TabDPT"
 CPU_INF_BATCH = 16
 
 
 class TabDPTEstimator(BaseEstimator):
+    @staticmethod
+    def download_weights() -> str:
+        path = hf_hub_download(
+            repo_id=_HF_REPO_ID,
+            filename=_MODEL_NAME,
+        )
+        return path
+
     def __init__(
         self,
-        mode: str,
+        mode: Literal["cls", "reg"],
         inf_batch_size: int = 512,
         device: str = None,
         use_flash: bool = True,
@@ -32,12 +42,15 @@ class TabDPTEstimator(BaseEstimator):
         """
         Initializes the TabDPT Estimator
         Args:
-            mode: Defines what mode the estimator is. One of {cls, reg} for classification and regression respectively
+            mode: Defines what mode the estimator is
+                "cls" is classification, "reg" is regression
             inf_batch_size: The batch size for inferencing
-            device: Specifies the computational device (e.g., CPU, GPU). Identical to https://docs.pytorch.org/docs/stable/generated/torch.cuda.device.html
+            device: Specifies the computational device (e.g., CPU, GPU)
+                Identical to https://docs.pytorch.org/docs/stable/generated/torch.cuda.device.html
             use_flash: Specifies whether to use flash attention or not
             compile: Specifies whether to compile the model with torch before inference
-            model_weight_path: path on file system specifying the model weights. If no path is specified, then the model weights are downloaded from HuggingFace
+            model_weight_path: path on file system specifying the model weights
+                If no path is specified, then the model weights are downloaded from HuggingFace
 
         """
         self.mode = mode
@@ -48,10 +61,7 @@ class TabDPTEstimator(BaseEstimator):
         if model_weight_path:
             self.path = model_weight_path
         else:
-            self.path = hf_hub_download(
-                repo_id="Layer6/TabDPT",
-                filename=_MODEL_NAME,
-            )
+            self.path = self.download_weights()
 
         with safe_open(self.path, framework="pt", device=self.device) as f:
             meta = f.metadata()
