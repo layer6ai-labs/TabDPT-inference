@@ -21,7 +21,7 @@ REG_DATASET_PATH = "tabdpt_datasets/data_splits/reg_datasets.csv"
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run TabDPT evaluation")
-    parser.add_argument("--context_size", type=int, default=2048, help="Context size for the model")
+    parser.add_argument("--context-size", type=int, default=2048, help="Context size for the model")
     parser.add_argument("--fold", type=int, default=0, help="Fold number to use for evaluation")
     parser.add_argument("--n-ensembles", type=int, default=8, help="Number of ensembles to use for evaluation")
     parser.add_argument("--temperature", type=float, default=0.8, help="Temperature for classification")
@@ -30,6 +30,8 @@ if __name__ == "__main__":
     parser.add_argument("--use-cpu", action="store_true", help="If true, use CPU for evalutation")
     parser.add_argument("--gpu-to-use", type=int, default=0, help="Which GPU to use")
     parser.add_argument("--results-folder", type=str, default="eval_output", help="Parent results directory")
+    parser.add_argument("--autotune-temp", action="store_true", help="If true, use autotuning to find temperature")
+    parser.add_argument("--only-cls", action="store_true", help="If true, only run classification")
     args = parser.parse_args()
 
     if args.use_cpu:
@@ -75,6 +77,8 @@ if __name__ == "__main__":
             dataset.prepare_data(".cache")
             dataset_name = dataset.name
         else:
+            if args.only_cls:
+                break
             dataset = OpenMLDataset("openml_dataset", task_id=int(did_tid_mapping[did]), fold=args.fold)
             dataset.prepare_data(".cache")
             dataset_name = dataset.openml_dataset.name
@@ -92,13 +96,21 @@ if __name__ == "__main__":
             model = model_cls
 
             t0 = time()
+            if args.autotune_temp:
+                tuned_temp = model.get_optimum_temperature_cv(X_train, y_train)
             model.fit(X_train, y_train)
             train_time = time() - t0
+
+            if args.autotune_temp:
+                temperature = tuned_temp
+                print(f"Temperature: {temperature}")
+            else:
+                temperature = args.temperature
 
             t1 = time()
             pred_val = model.ensemble_predict_proba(
                 X_test,
-                temperature=args.temperature,
+                temperature=temperature,
                 context_size=args.context_size,
                 n_ensembles=args.n_ensembles,
                 seed=args.seed,
@@ -176,5 +188,5 @@ if __name__ == "__main__":
         except TypeError:
             return None
 
-    print(f"IQM for Fold {args.fold}, N={args.n_ensembles}, T={args.temperature}:")
+    print(f"IQM for Fold {args.fold}, N={args.n_ensembles}")
     print(df[["acc", "auc", "corr", "r2"]].apply(lambda x: robust_iqm(x)))
