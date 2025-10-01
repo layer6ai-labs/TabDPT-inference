@@ -4,6 +4,8 @@ import numpy as np
 import torch
 from scipy.special import softmax
 from sklearn.base import ClassifierMixin
+from sklearn.metrics import log_loss
+from sklearn.model_selection import StratifiedKFold
 from tqdm import tqdm
 
 from .estimator import TabDPTEstimator
@@ -28,7 +30,48 @@ class TabDPTClassifier(TabDPTEstimator, ClassifierMixin):
             model_weight_path=model_weight_path,
         )
 
-    def fit(self, X: np.ndarray, y: np.ndarray):
+    @torch.no_grad()
+    def get_optimum_temperature_cv(
+        self,
+        X: np.ndarray,
+        y: np.ndarray,
+        temp_grid: list | None = None,
+        autotune_folds: int = 5,
+        max_autotune_context: int = 2048,
+    ):
+        default_grid = [x / 10 for x in range(1, 13)]
+        if temp_grid is None:
+            temp_grid = default_grid
+        skf = StratifiedKFold(n_splits=autotune_folds, shuffle=True, random_state=42)
+        all_logits = []
+        all_targets = []
+
+        for tr_idx, va_idx in skf.split(X, y):
+            X_tr, y_tr = X[tr_idx], y[tr_idx]
+            X_va, y_va = X[va_idx], y[va_idx]
+            super().fit(X_tr, y_tr)
+            self.num_classes = len(np.unique(self.y_train))
+            ctx = min(max_autotune_context, len(X_tr))
+            logits = self.predict_proba(X_va, return_logits=True, context_size=ctx)
+            logits = np.asarray(logits)
+            all_logits.append(logits)
+            all_targets.append(y_va)
+
+        logits_cv = np.concatenate(all_logits, axis=0)
+        y_cv = np.concatenate(all_targets, axis=0)
+        C = logits_cv.shape[-1]
+        losses = []
+        for t in temp_grid:
+            probs = softmax(logits_cv / float(t), axis=-1)
+            losses.append(log_loss(y_cv, probs, labels=np.arange(C)))
+
+        return temp_grid[int(np.argmin(losses))]
+
+    def fit(
+        self,
+        X: np.ndarray,
+        y: np.ndarray,
+    ):
         super().fit(X, y)
         self.num_classes = len(np.unique(self.y_train))
         assert self.num_classes > 1, "Number of classes must be greater than 1"
@@ -122,7 +165,6 @@ class TabDPTClassifier(TabDPTEstimator, ClassifierMixin):
                 if not return_logits:
                     pred = pred[..., :self.num_classes] / temperature
                     pred = torch.nn.functional.softmax(pred, dim=-1)
-                    pred /= pred.sum(axis=-1, keepdims=True)  # numerical stability
 
                 pred_list.append(pred.squeeze(dim=0))
             pred_val = torch.cat(pred_list, dim=0).squeeze().detach().cpu().float().numpy()
@@ -173,16 +215,20 @@ class TabDPTClassifier(TabDPTEstimator, ClassifierMixin):
         temperature: float = 0.8,
         context_size: int = 2048,
         permute_classes: bool = True,
+        return_probs: bool = False,
         seed: int | None = None,
     ):
         if n_ensembles == 1:
-            return self.predict_proba(X, temperature=temperature, context_size=context_size, seed=seed).argmax(axis=-1)
+            out = self.predict_proba(X, temperature=temperature, context_size=context_size, seed=seed)
         else:
-            return self.ensemble_predict_proba(
+            out = self.ensemble_predict_proba(
                 X,
                 n_ensembles=n_ensembles,
                 temperature=temperature,
                 context_size=context_size,
                 permute_classes=permute_classes,
                 seed=seed,
-            ).argmax(axis=-1)
+            )
+        if not return_probs:
+            out = out.argmax(axis=-1)
+        return out
