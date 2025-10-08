@@ -15,7 +15,7 @@ class TabDPTClassifier(TabDPTEstimator, ClassifierMixin):
     def __init__(
         self,
         inf_batch_size: int = 512,
-        normalizer: Literal["standard", "minmax", "robust", "power", "quantile-uniform", "quantile-normal", "log1p"]
+        normalizer: Literal["standard", "minmax", "robust", "power", "quantile-uniform", "quantile-normal", "log1p"] | None
             = "standard",
         missing_indicators: bool = False,
         device: str = None,

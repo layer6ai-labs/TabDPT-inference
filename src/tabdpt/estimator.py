@@ -34,7 +34,7 @@ class TabDPTEstimator(BaseEstimator):
         self,
         mode: Literal["cls", "reg"],
         inf_batch_size: int = 512,
-        normalizer: Literal["standard", "minmax", "robust", "power", "quantile-uniform", "quantile-normal", "log1p"]
+        normalizer: Literal["standard", "minmax", "robust", "power", "quantile-uniform", "quantile-normal", "log1p"] | None
             = "standard",
         missing_indicators: bool = False,
         device: str = None,
@@ -56,6 +56,7 @@ class TabDPTEstimator(BaseEstimator):
                 - "quantile-uniform": scikit-learn QuantileTransformer(output_distribution="uniform"), rescaled to (-1,1)
                 - "quantile-normal": scikit-learn QuantileTransformer(output_distribution="normal")
                 - "log1p": sign(X) * log(1 + abs(X))
+                - None: no normalization
             missing_indicators: If True, adds an additional binary column for each feature with
                 missing values indicating their position.
             device: Specifies the computational device (e.g., CPU, GPU)
@@ -108,10 +109,12 @@ class TabDPTEstimator(BaseEstimator):
                 self.scaler = QuantileTransformer(output_distribution="normal")
             case "log1p":
                 self.scaler = Log1pScaler()
+            case None:
+                self.scaler = None
             case _:
                 raise ValueError(
                     'normalizer must be one of '
-                    '["standard", "minmax", "robust", "power", "quantile-uniform", "quantile-normal", "log1p"]'
+                    '["standard", "minmax", "robust", "power", "quantile-uniform", "quantile-normal", "log1p", None]'
                 )
 
     def fit(self, X: np.ndarray, y: np.ndarray):
@@ -129,7 +132,8 @@ class TabDPTEstimator(BaseEstimator):
 
         self.imputer = SimpleImputer(strategy="mean")
         X = self.imputer.fit_transform(X)
-        X = self.scaler.fit_transform(X)
+        if self.scaler:
+            X = self.scaler.fit_transform(X)
         if self.normalizer == 'quantile-uniform':
             X = 2*X - 1
 
@@ -152,9 +156,10 @@ class TabDPTEstimator(BaseEstimator):
             inds = np.isnan(X)[:, self.has_missing_indicator].astype(float)
             X = np.hstack((X, inds))
         self.X_test = self.imputer.transform(X)
-        self.X_test = self.scaler.transform(self.X_test)
-        if self.normalizer == 'quantile-uniform':
-            self.X_test = 2*self.X_test - 1
+        if self.scaler:
+            self.X_test = self.scaler.transform(self.X_test)
+            if self.normalizer == 'quantile-uniform':
+                self.X_test = 2*self.X_test - 1
 
         train_x, train_y, test_x = (
             convert_to_torch_tensor(self.X_train).to(self.device).float(),
