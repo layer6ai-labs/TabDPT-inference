@@ -1,4 +1,5 @@
 import math
+from typing import Literal
 
 import numpy as np
 import torch
@@ -14,6 +15,9 @@ class TabDPTClassifier(TabDPTEstimator, ClassifierMixin):
     def __init__(
         self,
         inf_batch_size: int = 512,
+        normalizer: Literal["standard", "minmax", "robust", "power", "quantile-uniform", "quantile-normal", "log1p"]
+            = "standard",
+        missing_indicators: bool = False,
         device: str = None,
         use_flash: bool = True,
         compile: bool = True,
@@ -22,6 +26,8 @@ class TabDPTClassifier(TabDPTEstimator, ClassifierMixin):
         super().__init__(
             mode="cls",
             inf_batch_size=inf_batch_size,
+            normalizer=normalizer,
+            missing_indicators=missing_indicators,
             device=device,
             use_flash=use_flash,
             compile=compile,

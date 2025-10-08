@@ -1,4 +1,5 @@
 from functools import wraps
+from typing import Literal
 
 import faiss
 import numpy as np
@@ -99,3 +100,13 @@ class FAISS:
         knns = self.index.search(queries, k)
         indices_Xs = knns[1]
         return indices_Xs
+
+class Log1pScaler:
+    def fit(self, X: np.ndarray):
+        pass
+
+    def fit_transform(self, X: np.ndarray):
+        return np.log1p(np.abs(X)) * np.sign(X)
+
+    def transform(self, X: np.ndarray):
+        return np.log1p(np.abs(X)) * np.sign(X)
