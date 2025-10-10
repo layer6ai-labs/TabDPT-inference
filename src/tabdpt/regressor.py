@@ -17,6 +17,9 @@ class TabDPTRegressor(TabDPTEstimator, RegressorMixin):
         normalizer: Literal["standard", "minmax", "robust", "power", "quantile-uniform", "quantile-normal", "log1p"] | None
             = "standard",
         missing_indicators: bool = False,
+        clip_sigma: float = 4.,
+        feature_reduction: Literal["pca", "subsample"] = "pca",
+        faiss_metric: Literal["l2", "ip"] = "ip",
         device: str = None,
         use_flash: bool = True,
         compile: bool = True,
@@ -27,6 +30,9 @@ class TabDPTRegressor(TabDPTEstimator, RegressorMixin):
             inf_batch_size=inf_batch_size,
             normalizer=normalizer,
             missing_indicators=missing_indicators,
+            clip_sigma=clip_sigma,
+            feature_reduction=feature_reduction,
+            faiss_metric=faiss_metric,
             device=device,
             use_flash=use_flash,
             compile=compile,
@@ -35,7 +41,7 @@ class TabDPTRegressor(TabDPTEstimator, RegressorMixin):
 
     @torch.no_grad()
     def _predict(self, X: np.ndarray, context_size: int = 2048, seed: int | None = None):
-        train_x, train_y, test_x = self._prepare_prediction(X)
+        train_x, train_y, test_x = self._prepare_prediction(X, seed=seed)
 
         if seed is not None:
             self.faiss_knn.index.seed = seed
