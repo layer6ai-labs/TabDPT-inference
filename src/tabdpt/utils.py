@@ -1,4 +1,5 @@
 from functools import wraps
+from typing import Literal
 
 import faiss
 import numpy as np
@@ -83,11 +84,16 @@ def pad_x(X: torch.Tensor, num_features: int = 100):
 
 
 class FAISS:
-    def __init__(self, X):
+    def __init__(self, X, metric: Literal["l2", "ip"] = "l2"):
         assert isinstance(X, np.ndarray), "X must be a numpy array"
         X = np.ascontiguousarray(X)
         X = X.astype(np.float32)
-        self.index = faiss.IndexFlatL2(X.shape[1])
+        if metric == "l2":
+            self.index = faiss.IndexFlatL2(X.shape[1])
+        elif metric == "ip":
+            self.index = faiss.IndexFlatIP(X.shape[1])
+        else:
+            raise ValueError('metric must be "l2" or "ip"')
         self.index.add(X)
 
     def get_knn_indices(self, queries, k):
@@ -99,3 +105,13 @@ class FAISS:
         knns = self.index.search(queries, k)
         indices_Xs = knns[1]
         return indices_Xs
+
+class Log1pScaler:
+    def fit(self, X: np.ndarray):
+        pass
+
+    def fit_transform(self, X: np.ndarray):
+        return np.log1p(np.abs(X)) * np.sign(X)
+
+    def transform(self, X: np.ndarray):
+        return np.log1p(np.abs(X)) * np.sign(X)

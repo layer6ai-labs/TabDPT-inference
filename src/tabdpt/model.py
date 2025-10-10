@@ -19,6 +19,7 @@ class TabDPTModel(nn.Module):
         nlayers: int,
         num_features: int,
         use_flash: bool = True,
+        clip_sigma: float = 4.
     ):
         super().__init__()
         self.n_out = n_out
@@ -39,6 +40,7 @@ class TabDPTModel(nn.Module):
         self.dropout = nn.Dropout(p=dropout)
         self.y_encoder = nn.Linear(1, ninp)
         self.head = nn.Sequential(nn.Linear(ninp, nhid), nn.GELU(), nn.Linear(nhid, n_out + 1))
+        self.clip_sigma = clip_sigma
 
     @flash_context
     def forward(
@@ -51,9 +53,9 @@ class TabDPTModel(nn.Module):
         y_src = y_src.squeeze(-1).transpose(0, 1)
         eval_pos = y_src.shape[0]
         assert x_src.shape[1] == y_src.shape[1], "x_src and y_src must have the same batch size"
-        x_src = clip_outliers(x_src, -1 if self.training else eval_pos, n_sigma=4)
+        x_src = clip_outliers(x_src, -1 if self.training else eval_pos, n_sigma=self.clip_sigma)
         x_src = normalize_data(x_src, -1 if self.training else eval_pos)
-        x_src = clip_outliers(x_src, -1 if self.training else eval_pos, n_sigma=4)
+        x_src = clip_outliers(x_src, -1 if self.training else eval_pos, n_sigma=self.clip_sigma)
         if task == "reg":
             y_src, mean_y, std_y = normalize_data(y_src, return_mean_std=True)
             y_src = clip_outliers(y_src)
@@ -84,7 +86,7 @@ class TabDPTModel(nn.Module):
         return pred
 
     @classmethod
-    def load(cls, model_state, config, use_flash):
+    def load(cls, model_state, config, use_flash, clip_sigma: float = 4.):
         assert config.model.max_num_classes > 2
         model = TabDPTModel(
             dropout=config.training.dropout,
@@ -95,6 +97,7 @@ class TabDPTModel(nn.Module):
             nlayers=config.model.nlayers,
             num_features=config.model.max_num_features,
             use_flash=use_flash,
+            clip_sigma=clip_sigma
         )
 
         model_state = {k.replace("_orig_mod.", ""): v for k, v in model_state.items()}
