@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tabdpt"
-version = "1.1.6"
+version = "1.1.7"
 description = "TabDPT: Scaling Tabular Foundation Models on Real Data"
 readme = "README.md"
 license = "Apache-2.0"
