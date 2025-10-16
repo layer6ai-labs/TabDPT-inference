@@ -20,7 +20,7 @@ class TabDPTClassifier(TabDPTEstimator, ClassifierMixin):
         missing_indicators: bool = False,
         clip_sigma: float = 4.,
         feature_reduction: Literal["pca", "subsample"] = "pca",
-        faiss_metric: Literal["l2", "ip"] = "ip",
+        faiss_metric: Literal["l2", "ip"] = "l2",
         device: str = None,
         use_flash: bool = True,
         compile: bool = True,
