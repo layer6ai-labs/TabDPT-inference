@@ -25,8 +25,9 @@ if __name__ == "__main__":
     parser.add_argument("--fold", type=int, default=0, help="Fold number to use for evaluation")
     parser.add_argument("--n-ensembles", type=int, default=1, help="Number of ensembles to use for evaluation")
     parser.add_argument("--temperature", type=float, default=0.8, help="Temperature for classification")
+    parser.add_argument("--beta", type=float, default=0.25, help="Softmax temperature for regression bin decoding")
     parser.add_argument("--seed", type=int, default=0, help="Model evaluation seed")
-    parser.add_argument("--inf-batch-size", type=int, default=512, help="Batch size for inference")
+    parser.add_argument("--inf-batch-size", type=int, default=1024, help="Batch size for inference")
     parser.add_argument("--use-cpu", action="store_true", help="If true, use CPU for evalutation")
     parser.add_argument("--gpu-to-use", type=int, default=0, help="Which GPU to use")
     parser.add_argument("--results-folder", type=str, default="eval_output", help="Parent results directory")
@@ -60,9 +61,16 @@ if __name__ == "__main__":
         "r2": [],
         "train_time": [],
         "inference_time": [],
+        "beta": [],
     }
     model_cls = TabDPTClassifier(inf_batch_size=args.inf_batch_size, device=device, model_weight_path='16k_last_410epoch.ckpt', compile=False)
-    model_reg = TabDPTRegressor(inf_batch_size=args.inf_batch_size, device=device, model_weight_path='16k_last_410epoch.ckpt', compile=False)
+    model_reg = TabDPTRegressor(
+        inf_batch_size=args.inf_batch_size,
+        device=device,
+        model_weight_path='16k_last_410epoch.ckpt',
+        compile=False,
+        beta=args.beta,
+    )
 
     pbar = tqdm(
         itertools.chain(itertools.product(["cls"], cc18_dids), itertools.product(["reg"], ctr23_dids)),
@@ -127,7 +135,7 @@ if __name__ == "__main__":
 
             t1 = time()
             pred_val_scaled = model.predict(
-                X_test, context_size=args.context_size, n_ensembles=args.n_ensembles, seed=args.seed
+                X_test, context_size=args.context_size, n_ensembles=args.n_ensembles, seed=args.seed, beta=args.beta
             )
             inference_time = time() - t1
             pred_val = scaler.inverse_transform(pred_val_scaled.reshape(-1, 1)).ravel()
@@ -145,6 +153,7 @@ if __name__ == "__main__":
         results["mse"].append(mse)
         results["corr"].append(corr)
         results["r2"].append(r2)
+        results["beta"].append(args.beta if mode == "reg" else np.nan)
         results["train_time"].append(train_time)
         results["inference_time"].append(inference_time)
 
@@ -162,8 +171,8 @@ if __name__ == "__main__":
     datetime_string = datetime.now().isoformat(timespec="seconds")
     datetime_string = datetime_string.replace("T", "_").replace(":", "-")
     csv_name = (
-        f"results_longctx_{datetime_string}_context={args.context_size}_"
-        f"fold={args.fold}_N={args.n_ensembles}_seed={args.seed}.csv"
+        f"results_longctx_context={args.context_size}_"
+        f"fold={args.fold}_N={args.n_ensembles}_seed={args.seed}_beta={args.beta}.csv"
     )
 
     os.makedirs(args.results_folder, exist_ok=True)

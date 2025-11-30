@@ -24,6 +24,7 @@ class TabDPTRegressor(TabDPTEstimator, RegressorMixin):
         use_flash: bool = True,
         compile: bool = True,
         model_weight_path: str | None = None,
+        beta: float = 0.2,
     ):
         super().__init__(
             mode="reg",
@@ -38,9 +39,11 @@ class TabDPTRegressor(TabDPTEstimator, RegressorMixin):
             compile=compile,
             model_weight_path=model_weight_path,
         )
+        self.beta = beta
 
     @torch.no_grad()
-    def _predict(self, X: np.ndarray, context_size: int = 2048, seed: int | None = None):
+    def _predict(self, X: np.ndarray, context_size: int = 2048, seed: int | None = None, beta: float | None = None):
+        beta = self.beta if beta is None else beta
         train_x, train_y, test_x = self._prepare_prediction(X, seed=seed)
 
         if seed is not None:
@@ -57,14 +60,11 @@ class TabDPTRegressor(TabDPTEstimator, RegressorMixin):
                 y_src=y_train.unsqueeze(-1),
                 task=self.mode,
             )
-            test_logits = pred[..., 0, :].float()
-            test_preds = predict_regression_value(
-                test_logits
-            )  # => shape: [batch_size]
-
-            return pred.float().squeeze().detach().cpu().float().numpy()
+            test_logits = pred[:, 0, :].float()  # (T_test, nbins)
+            test_preds = predict_regression_value(test_logits, beta=beta)  # (T_test,)
+            return test_preds.detach().cpu().float().numpy()
         else:
-            pred_list = []
+            pred_values = []
             for b in range(math.ceil(len(self.X_test) / self.inf_batch_size)):
                 start = b * self.inf_batch_size
                 end = min(len(self.X_test), (b + 1) * self.inf_batch_size)
@@ -85,21 +85,36 @@ class TabDPTRegressor(TabDPTEstimator, RegressorMixin):
                     y_src=y_nni.unsqueeze(-1),
                     task=self.mode,
                 )
+                test_logits = pred.squeeze(0).float()  # (B, nbins)
+                test_vals = predict_regression_value(test_logits, beta=beta)  # (B,)
+                pred_values.append(test_vals)
 
-                pred_list.append(pred.squeeze(dim=0))
+            return torch.cat(pred_values).detach().cpu().float().numpy()
 
-            return torch.cat(pred_list).squeeze().detach().cpu().float().numpy()
-
-    def _ensemble_predict(self, X: np.ndarray, n_ensembles: int = 8, context_size: int = 2048, seed: int | None = None):
+    def _ensemble_predict(
+        self,
+        X: np.ndarray,
+        n_ensembles: int = 8,
+        context_size: int = 2048,
+        seed: int | None = None,
+        beta: float | None = None,
+    ):
         prediction_cumsum = 0
         generator = np.random.SeedSequence(seed)
         for _, inner_seed in tqdm(zip(range(n_ensembles), generator.generate_state(n_ensembles))):
             inner_seed = int(inner_seed)
-            prediction_cumsum += self._predict(X, context_size=context_size, seed=inner_seed)
+            prediction_cumsum += self._predict(X, context_size=context_size, seed=inner_seed, beta=beta)
         return prediction_cumsum / n_ensembles
 
-    def predict(self, X: np.ndarray, n_ensembles: int = 8, context_size: int = 2048, seed: int | None = None):
+    def predict(
+        self,
+        X: np.ndarray,
+        n_ensembles: int = 8,
+        context_size: int = 2048,
+        seed: int | None = None,
+        beta: float | None = None,
+    ):
         if n_ensembles == 1:
-            return self._predict(X, context_size=context_size, seed=seed)
+            return self._predict(X, context_size=context_size, seed=seed, beta=beta)
         else:
-            return self._ensemble_predict(X, n_ensembles=n_ensembles, context_size=context_size, seed=seed)
+            return self._ensemble_predict(X, n_ensembles=n_ensembles, context_size=context_size, seed=seed, beta=beta)

@@ -8,7 +8,7 @@ from torch.nn.attention import SDPBackend, sdpa_kernel
 import torch.nn.functional as F
 
 
-def predict_regression_value(logits_reg, vmin=-10, vmax=10):
+def predict_regression_value(logits_reg, vmin=-10, vmax=10, beta=0.2):
     """
     logits_reg: (..., nbins)
     returns predicted y of shape (...)
@@ -22,7 +22,7 @@ def predict_regression_value(logits_reg, vmin=-10, vmax=10):
     bin_centers = bin_edges[:-1] + 0.5 * bin_width  # shape: (nbins,)
 
     # Convert logits => probabilities
-    probs = F.softmax(logits_reg, dim=-1)  # shape: (..., nbins)
+    probs = F.softmax(logits_reg*beta, dim=-1)  # shape: (..., nbins)
 
     # Weighted sum over bins
     # We'll broadcast bin_centers so that we can do (..., nbins) * (nbins,)
