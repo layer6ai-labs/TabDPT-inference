@@ -5,7 +5,28 @@ import faiss
 import numpy as np
 import torch
 from torch.nn.attention import SDPBackend, sdpa_kernel
+import torch.nn.functional as F
 
+
+def predict_regression_value(logits_reg, vmin=-10, vmax=10):
+    """
+    logits_reg: (..., nbins)
+    returns predicted y of shape (...)
+    """
+    nbins = logits_reg.size(-1)
+    device = logits_reg.device
+
+    # Bin centers
+    bin_edges = torch.linspace(vmin, vmax, nbins+1, device=device)
+    bin_width = bin_edges[1] - bin_edges[0]
+    bin_centers = bin_edges[:-1] + 0.5 * bin_width  # shape: (nbins,)
+
+    # Convert logits => probabilities
+    probs = F.softmax(logits_reg, dim=-1)  # shape: (..., nbins)
+
+    # Weighted sum over bins
+    # We'll broadcast bin_centers so that we can do (..., nbins) * (nbins,)
+    return torch.sum(probs * bin_centers, dim=-1)
 
 def generate_random_permutation(N, seed=None):
     generator = torch.Generator()

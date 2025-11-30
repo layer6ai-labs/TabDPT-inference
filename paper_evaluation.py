@@ -21,9 +21,9 @@ REG_DATASET_PATH = "tabdpt_datasets/data_splits/reg_datasets.csv"
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run TabDPT evaluation")
-    parser.add_argument("--context_size", type=int, default=2048, help="Context size for the model")
+    parser.add_argument("--context_size", type=int, default=100000, help="Context size for the model")
     parser.add_argument("--fold", type=int, default=0, help="Fold number to use for evaluation")
-    parser.add_argument("--n-ensembles", type=int, default=8, help="Number of ensembles to use for evaluation")
+    parser.add_argument("--n-ensembles", type=int, default=1, help="Number of ensembles to use for evaluation")
     parser.add_argument("--temperature", type=float, default=0.8, help="Temperature for classification")
     parser.add_argument("--seed", type=int, default=0, help="Model evaluation seed")
     parser.add_argument("--inf-batch-size", type=int, default=512, help="Batch size for inference")
@@ -61,8 +61,8 @@ if __name__ == "__main__":
         "train_time": [],
         "inference_time": [],
     }
-    model_cls = TabDPTClassifier(inf_batch_size=args.inf_batch_size, device=device)
-    model_reg = TabDPTRegressor(inf_batch_size=args.inf_batch_size, device=device)
+    model_cls = TabDPTClassifier(inf_batch_size=args.inf_batch_size, device=device, model_weight_path='16k_last_410epoch.ckpt', compile=False)
+    model_reg = TabDPTRegressor(inf_batch_size=args.inf_batch_size, device=device, model_weight_path='16k_last_410epoch.ckpt', compile=False)
 
     pbar = tqdm(
         itertools.chain(itertools.product(["cls"], cc18_dids), itertools.product(["reg"], ctr23_dids)),
@@ -162,19 +162,13 @@ if __name__ == "__main__":
     datetime_string = datetime.now().isoformat(timespec="seconds")
     datetime_string = datetime_string.replace("T", "_").replace(":", "-")
     csv_name = (
-        f"results_{datetime_string}_context={args.context_size}_"
+        f"results_longctx_{datetime_string}_context={args.context_size}_"
         f"fold={args.fold}_N={args.n_ensembles}_seed={args.seed}.csv"
     )
 
     os.makedirs(args.results_folder, exist_ok=True)
     df.to_csv(os.path.join(args.results_folder, csv_name), index=False)
 
-    def robust_iqm(x):
-        try:
-            x = x[~np.isnan(x)]
-            return metrics.aggregate_iqm(x)
-        except TypeError:
-            return None
 
     print(f"IQM for Fold {args.fold}, N={args.n_ensembles}, T={args.temperature}:")
-    print(df[["acc", "auc", "corr", "r2"]].apply(lambda x: robust_iqm(x)))
+    print(df[["acc", "auc", "corr", "r2"]].apply(lambda x: np.nanmean(x)))

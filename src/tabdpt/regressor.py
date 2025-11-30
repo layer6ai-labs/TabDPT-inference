@@ -7,7 +7,7 @@ from sklearn.base import RegressorMixin
 from tqdm import tqdm
 
 from .estimator import TabDPTEstimator
-from .utils import generate_random_permutation, pad_x
+from .utils import generate_random_permutation, pad_x, predict_regression_value
 
 
 class TabDPTRegressor(TabDPTEstimator, RegressorMixin):
@@ -44,20 +44,23 @@ class TabDPTRegressor(TabDPTEstimator, RegressorMixin):
         train_x, train_y, test_x = self._prepare_prediction(X, seed=seed)
 
         if seed is not None:
-            self.faiss_knn.index.seed = seed
             feat_perm = generate_random_permutation(train_x.shape[1], seed)
             train_x = train_x[:, feat_perm]
             test_x = test_x[:, feat_perm]
 
         if context_size >= self.n_instances:
-            X_train = pad_x(train_x[None, :, :], self.max_features).to(self.device)
-            X_test = pad_x(test_x[None, :, :], self.max_features).to(self.device)
-            y_train = train_y[None, :].float()
+            X_train = pad_x(train_x, self.max_features).to(self.device).unsqueeze(1)  # (T_train, 1, F)
+            X_test = pad_x(test_x, self.max_features).to(self.device).unsqueeze(1)    # (T_test, 1, F)
+            y_train = train_y.unsqueeze(1).float()                                   # (T_train, 1)
             pred = self.model(
-                x_src=torch.cat([X_train, X_test], dim=1),
+                x_src=torch.cat([X_train, X_test], dim=0),
                 y_src=y_train.unsqueeze(-1),
                 task=self.mode,
             )
+            test_logits = pred[..., 0, :].float()
+            test_preds = predict_regression_value(
+                test_logits
+            )  # => shape: [batch_size]
 
             return pred.float().squeeze().detach().cpu().float().numpy()
         else:
@@ -67,17 +70,18 @@ class TabDPTRegressor(TabDPTEstimator, RegressorMixin):
                 end = min(len(self.X_test), (b + 1) * self.inf_batch_size)
 
                 indices_nni = self.faiss_knn.get_knn_indices(self.X_test[start:end], k=context_size)
-                X_nni = train_x[torch.tensor(indices_nni)]
-                y_nni = train_y[torch.tensor(indices_nni)]
+                idx = torch.as_tensor(indices_nni, device=train_x.device)
+                X_nni = train_x[idx]  # (B, ctx, F)
+                y_nni = train_y[idx]  # (B, ctx)
 
                 X_nni, y_nni = (
-                    pad_x(torch.Tensor(X_nni), self.max_features).to(self.device),
-                    torch.Tensor(y_nni).to(self.device),
+                    pad_x(X_nni, self.max_features).to(self.device).permute(1, 0, 2),  # (ctx, B, F)
+                    y_nni.to(self.device).permute(1, 0),                               # (ctx, B)
                 )
                 X_eval = test_x[start:end]
-                X_eval = pad_x(X_eval.unsqueeze(1), self.max_features).to(self.device)
+                X_eval = pad_x(X_eval.unsqueeze(1), self.max_features).to(self.device).permute(1, 0, 2)  # (1, B, F)
                 pred = self.model(
-                    x_src=torch.cat([X_nni, X_eval], dim=1),
+                    x_src=torch.cat([X_nni, X_eval], dim=0),
                     y_src=y_nni.unsqueeze(-1),
                     task=self.mode,
                 )

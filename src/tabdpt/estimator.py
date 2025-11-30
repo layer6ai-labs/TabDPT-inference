@@ -5,11 +5,13 @@ import numpy as np
 import torch
 from huggingface_hub import hf_hub_download
 from omegaconf import OmegaConf
+from omegaconf.dictconfig import DictConfig
 from safetensors import safe_open
 from sklearn.base import BaseEstimator
 from sklearn.impute import SimpleImputer
 from sklearn.preprocessing import StandardScaler, MinMaxScaler, RobustScaler, PowerTransformer, QuantileTransformer
 from sklearn.utils.validation import check_is_fitted
+from torch.serialization import add_safe_globals
 
 from .model import TabDPTModel
 from .utils import FAISS, convert_to_torch_tensor, Log1pScaler, generate_random_permutation
@@ -86,14 +88,10 @@ class TabDPTEstimator(BaseEstimator):
         else:
             self.path = self.download_weights()
 
-        with safe_open(self.path, framework="pt", device=self.device) as f:
-            meta = f.metadata()
-            cfg_dict = json.loads(meta["cfg"])
-            cfg = OmegaConf.create(cfg_dict)
-            model_state = {k: f.get_tensor(k) for k in f.keys()}
+        model_state, cfg = self._load_model_weights(self.path)
 
         cfg.env.device = self.device
-        self.model = TabDPTModel.load(model_state=model_state, config=cfg, use_flash=self.use_flash, clip_sigma=clip_sigma)
+        self.model = TabDPTModel.load(model_state=model_state, config=cfg)
         self.model.eval()
 
         self.max_features = self.model.num_features
@@ -129,6 +127,30 @@ class TabDPTEstimator(BaseEstimator):
                     'normalizer must be one of '
                     '["standard", "minmax", "robust", "power", "quantile-uniform", "quantile-normal", "log1p", None]'
                 )
+
+    def _load_model_weights(self, path: str):
+        """
+        Load weights from either a safetensors file (default HF format) or a torch checkpoint (.ckpt).
+        """
+        if path.endswith(".safetensors"):
+            with safe_open(path, framework="pt", device=self.device) as f:
+                meta = f.metadata()
+                cfg_dict = json.loads(meta["cfg"])
+                cfg = OmegaConf.create(cfg_dict)
+                model_state = {k: f.get_tensor(k) for k in f.keys()}
+        else:
+            # Allowlist DictConfig for torch.load when weights_only safety is enabled (PyTorch 2.6+)
+            add_safe_globals([DictConfig])
+            checkpoint = torch.load(path, map_location=self.device, weights_only=False)
+            cfg = checkpoint.get("cfg")
+            if cfg is None:
+                raise ValueError(f"No config 'cfg' found in checkpoint at {path}")
+            if not isinstance(cfg, DictConfig):
+                cfg = OmegaConf.create(cfg)
+            model_state = checkpoint.get("model") or checkpoint.get("state_dict")
+            if model_state is None:
+                raise ValueError(f"No model weights found in checkpoint at {path}")
+        return model_state, cfg
 
     def fit(self, X: np.ndarray, y: np.ndarray):
         assert isinstance(X, np.ndarray), "X must be a numpy array"
