@@ -117,15 +117,21 @@ class TabDPTModel(nn.Module):
         context_length = y_src.shape[0]
         B = y_src.shape[1]
         # x_src = clip_outliers(x_src, -1 if self.training  else context_length, n_sigma=4)
-        x_src = normalize_data(x_src, -1 if self.training else context_length)
-        x_src = clip_outliers(x_src, -1 if self.training  else context_length, n_sigma=10)
-        x_src = torch.nan_to_num(x_src, nan=0)
+        # Normalize/clip in fp32 for stability even under autocast/bf16.
+        norm_ctx = torch.autocast(device_type=x_src.device.type, enabled=False) if torch.is_autocast_enabled() else torch.enable_grad()
+        with norm_ctx:
+            x_src = normalize_data(x_src.float(), -1 if self.training else context_length)
+            x_src = clip_outliers(x_src, -1 if self.training  else context_length, n_sigma=10)
+            x_src = torch.nan_to_num(x_src, nan=0)
 
 
-        x_src = self.xnorm(self.encoder(x_src))
-        if y_src.dim() == 2:
-            y_src = y_src.unsqueeze(-1)
-        y_src = self.ynorm(self.y_encoder(y_src))
+        # Encode in fp32 for stability; transformer may still run under autocast.
+        enc_ctx = torch.autocast(device_type=x_src.device.type, enabled=False) if torch.is_autocast_enabled() else torch.enable_grad()
+        with enc_ctx:
+            x_src = self.xnorm(self.encoder(x_src.float()))
+            if y_src.dim() == 2:
+                y_src = y_src.unsqueeze(-1)
+            y_src = self.ynorm(self.y_encoder(y_src.float()))
         train_x = x_src[:context_length] + y_src
         src = torch.cat([train_x, x_src[context_length:]], 0)
         # mean = (src**2).mean(dim=-1, keepdim=True)
@@ -137,7 +143,8 @@ class TabDPTModel(nn.Module):
         for l, layer in enumerate(self.transformer_encoder):
             src = layer(src, context_length)
 
-        pred = self.head(src)
+        # Run the final projection in fp32 for numerical stability when upstream used mixed precision.
+        pred = self.head(src.float())
 
         pred = pred[context_length:]
         if task in ("cls", Task.CLS):

@@ -13,6 +13,7 @@ def predict_regression_value(logits_reg, vmin=-10, vmax=10, beta=0.2):
     logits_reg: (..., nbins)
     returns predicted y of shape (...)
     """
+    logits_reg = logits_reg.float()  # ensure softmax runs in fp32 for stability
     nbins = logits_reg.size(-1)
     device = logits_reg.device
 

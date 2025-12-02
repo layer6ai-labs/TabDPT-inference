@@ -45,13 +45,14 @@ class TabDPTClassifier(TabDPTEstimator, ClassifierMixin):
         self.num_classes = len(np.unique(self.y_train))
         assert self.num_classes > 1, "Number of classes must be greater than 1"
 
+    @torch.no_grad()
     def _predict_large_cls(self, X_train, X_test, y_train):
         num_digits = math.ceil(math.log(self.num_classes, self.max_num_classes))
 
         digit_preds = []
         for i in range(num_digits):
             y_train_digit = (y_train // (self.max_num_classes**i)) % self.max_num_classes
-            pred = self.model(
+            pred = self._run_model(
                 x_src=torch.cat([X_train, X_test], dim=0),
                 y_src=y_train_digit.unsqueeze(-1),
                 task=self.mode,
@@ -69,6 +70,70 @@ class TabDPTClassifier(TabDPTEstimator, ClassifierMixin):
         return full_pred
 
     @torch.no_grad()
+    def _predict_proba_batched(
+        self,
+        X: np.ndarray,
+        n_ensembles: int,
+        temperature: float,
+        context_size: int,
+        permute_classes: bool,
+        seed: int | None,
+        return_logits: bool,
+    ):
+        # Only used when context_size >= n_instances (no retrieval).
+        train_x, train_y, test_x = self._prepare_prediction(X, class_perm=None, seed=None)
+
+        seeds = np.random.SeedSequence(seed).generate_state(n_ensembles)
+        train_x_list, test_x_list, y_train_list, inv_perms = [], [], [], []
+
+        for s in seeds:
+            s = int(s)
+            feat_perm = generate_random_permutation(train_x.shape[1], s)
+            tx = train_x[:, feat_perm]
+            te = test_x[:, feat_perm]
+            ty = train_y.clone()
+
+            inv_perm = None
+            if permute_classes:
+                perm = generate_random_permutation(self.num_classes, s)
+                inv_perm = torch.as_tensor(np.argsort(perm), device=ty.device)
+                ty = inv_perm[ty.long()].float()  # remap labels into permuted space
+
+            train_x_list.append(tx)
+            test_x_list.append(te)
+            y_train_list.append(ty)
+            inv_perms.append(inv_perm)
+
+        X_train = pad_x(torch.stack(train_x_list, dim=1), self.max_features).to(self.device)
+        X_test = pad_x(torch.stack(test_x_list, dim=1), self.max_features).to(self.device)
+        y_train = torch.stack(y_train_list, dim=1).float()
+
+        pred = self.model(
+            x_src=torch.cat([X_train, X_test], dim=0),
+            y_src=y_train.unsqueeze(-1),
+            task=self.mode,
+        )  # (T_test, B, num_classes)
+
+        if permute_classes:
+            reordered = []
+            for b, inv_perm in enumerate(inv_perms):
+                if inv_perm is None:
+                    reordered.append(pred[:, b, :])
+                else:
+                    reordered.append(pred[:, b, :][:, inv_perm])
+            pred = torch.stack(reordered, dim=1)
+
+        pred = pred.float()
+        logit_mean = pred.mean(dim=1)  # average across ensemble dimension
+
+        if return_logits:
+            return logit_mean.detach().cpu().numpy()
+
+        logit_mean = logit_mean / temperature
+        prob = torch.nn.functional.softmax(logit_mean, dim=-1)
+        prob = prob.detach().cpu().numpy()
+        return prob
+
     def predict_proba(
         self,
         X: np.ndarray,
@@ -91,7 +156,7 @@ class TabDPTClassifier(TabDPTEstimator, ClassifierMixin):
             y_train = train_y.unsqueeze(1).float()                                   # (T_train, 1)
 
             if self.num_classes <= self.max_num_classes:
-                pred = self.model(
+                pred = self._run_model(
                     x_src=torch.cat([X_train, X_test], dim=0),
                     y_src=y_train.unsqueeze(-1),
                     task=self.mode,
@@ -109,7 +174,11 @@ class TabDPTClassifier(TabDPTEstimator, ClassifierMixin):
                 start = b * self.inf_batch_size
                 end = min(len(self.X_test), (b + 1) * self.inf_batch_size)
 
-                indices_nni = self.faiss_knn.get_knn_indices(self.X_test[start:end], k=context_size)
+                if self.faiss_knn is None:
+                    # fallback: use all train points if index is absent
+                    indices_nni = [list(range(self.n_instances))] * (end - start)
+                else:
+                    indices_nni = self.faiss_knn.get_knn_indices(self.X_test[start:end], k=context_size)
                 idx = torch.as_tensor(indices_nni, device=train_x.device)
                 X_nni = train_x[idx]  # (B, ctx, F)
                 y_nni = train_y[idx]  # (B, ctx)
@@ -122,7 +191,7 @@ class TabDPTClassifier(TabDPTEstimator, ClassifierMixin):
                 X_eval = pad_x(X_eval.unsqueeze(1), self.max_features).to(self.device).permute(1, 0, 2)  # (1, B, F)
 
                 if self.num_classes <= self.max_num_classes:
-                    pred = self.model(
+                    pred = self._run_model(
                         x_src=torch.cat([X_nni, X_eval], dim=0),
                         y_src=y_nni.unsqueeze(-1),
                         task=self.mode,
@@ -141,6 +210,7 @@ class TabDPTClassifier(TabDPTEstimator, ClassifierMixin):
 
         return pred_val
 
+    @torch.no_grad()
     def ensemble_predict_proba(
         self,
         X,
@@ -150,6 +220,22 @@ class TabDPTClassifier(TabDPTEstimator, ClassifierMixin):
         permute_classes: bool = True,
         seed: int | None = None,
     ):
+        # Use batched ensemble only when logits dimension matches the number of classes
+        if (
+            n_ensembles > 1
+            and context_size >= self.n_instances
+            and self.num_classes <= self.max_num_classes
+        ):
+            return self._predict_proba_batched(
+                X,
+                n_ensembles=n_ensembles,
+                temperature=temperature,
+                context_size=context_size,
+                permute_classes=permute_classes,
+                seed=seed,
+                return_logits=False,
+            )
+
         root_ss = np.random.SeedSequence(seed)
         inner_seeds = root_ss.generate_state(n_ensembles)
         logit_cumsum = None
@@ -178,6 +264,7 @@ class TabDPTClassifier(TabDPTEstimator, ClassifierMixin):
         pred /= pred.sum(axis=-1, keepdims=True)
         return pred
 
+    @torch.no_grad()
     def predict(
         self,
         X,

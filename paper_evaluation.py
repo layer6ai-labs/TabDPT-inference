@@ -23,14 +23,15 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run TabDPT evaluation")
     parser.add_argument("--context_size", type=int, default=100000, help="Context size for the model")
     parser.add_argument("--fold", type=int, default=0, help="Fold number to use for evaluation")
-    parser.add_argument("--n-ensembles", type=int, default=1, help="Number of ensembles to use for evaluation")
+    parser.add_argument("--n-ensembles", type=int, default=8, help="Number of ensembles to use for evaluation")
     parser.add_argument("--temperature", type=float, default=0.8, help="Temperature for classification")
     parser.add_argument("--beta", type=float, default=0.25, help="Softmax temperature for regression bin decoding")
     parser.add_argument("--seed", type=int, default=0, help="Model evaluation seed")
     parser.add_argument("--inf-batch-size", type=int, default=1024, help="Batch size for inference")
     parser.add_argument("--use-cpu", action="store_true", help="If true, use CPU for evalutation")
     parser.add_argument("--gpu-to-use", type=int, default=0, help="Which GPU to use")
-    parser.add_argument("--results-folder", type=str, default="eval_output", help="Parent results directory")
+    parser.add_argument("--results-folder", type=str, default="eval_precision", help="Parent results directory")
+    parser.add_argument("--precision-tag", type=str, default="bf16", help="Tag to identify precision mode in filenames")
     args = parser.parse_args()
 
     if args.use_cpu:
@@ -171,7 +172,7 @@ if __name__ == "__main__":
     datetime_string = datetime.now().isoformat(timespec="seconds")
     datetime_string = datetime_string.replace("T", "_").replace(":", "-")
     csv_name = (
-        f"results_longctx_context={args.context_size}_"
+        f"results_{args.precision_tag}_context={args.context_size}_"
         f"fold={args.fold}_N={args.n_ensembles}_seed={args.seed}_beta={args.beta}.csv"
     )
 

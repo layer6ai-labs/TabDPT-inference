@@ -1,4 +1,5 @@
 import json
+import os
 from typing import Literal
 
 import numpy as np
@@ -88,6 +89,11 @@ class TabDPTEstimator(BaseEstimator):
         else:
             self.path = self.download_weights()
 
+        if self.device.startswith("cuda"):
+            # Enable Tensor Cores for FP32 matmul; allow override via env MATMUL_PRECISION
+            matmul_precision = os.getenv("MATMUL_PRECISION", "highest")
+            torch.set_float32_matmul_precision(matmul_precision)
+
         model_state, cfg = self._load_model_weights(self.path)
 
         cfg.env.device = self.device
@@ -127,6 +133,17 @@ class TabDPTEstimator(BaseEstimator):
                     'normalizer must be one of '
                     '["standard", "minmax", "robust", "power", "quantile-uniform", "quantile-normal", "log1p", None]'
                 )
+
+    def _run_model(self, x_src, y_src, task):
+        """
+        Run the underlying model with autocast to bf16 on CUDA for faster inference.
+        Set DISABLE_BF16=1 to force full precision on CUDA.
+        """
+        use_autocast = self.device.startswith("cuda") and os.getenv("DISABLE_BF16", "0") != "1"
+        if use_autocast:
+            with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+                return self.model(x_src=x_src, y_src=y_src, task=task)
+        return self.model(x_src=x_src, y_src=y_src, task=task)
 
     def _load_model_weights(self, path: str):
         """
@@ -172,7 +189,10 @@ class TabDPTEstimator(BaseEstimator):
         if self.normalizer == 'quantile-uniform':
             X = 2*X - 1
 
-        self.faiss_knn = FAISS(X, metric=self.faiss_metric)
+        # Build FAISS index only when we might use retrieval
+        self.faiss_knn = None
+        if X.shape[0] > self.max_features:  # proxy for "dataset large enough to ever need retrieval"
+            self.faiss_knn = FAISS(X, metric=self.faiss_metric)
         self.n_instances, self.n_features = X.shape
         self.X_train = X
         self.y_train = y
@@ -182,7 +202,7 @@ class TabDPTEstimator(BaseEstimator):
 
         self.is_fitted_ = True
         if self.compile:
-            self.model = torch.compile(self.model)
+            self.model = torch.compile(self.model, dynamic=True)
 
     def _prepare_prediction(self, X: np.ndarray, class_perm: np.ndarray | None = None, seed: int | None = None):
         check_is_fitted(self)
