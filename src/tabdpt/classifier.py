@@ -220,22 +220,6 @@ class TabDPTClassifier(TabDPTEstimator, ClassifierMixin):
         permute_classes: bool = True,
         seed: int | None = None,
     ):
-        # Use batched ensemble only when logits dimension matches the number of classes
-        if (
-            n_ensembles > 1
-            and context_size >= self.n_instances
-            and self.num_classes <= self.max_num_classes
-        ):
-            return self._predict_proba_batched(
-                X,
-                n_ensembles=n_ensembles,
-                temperature=temperature,
-                context_size=context_size,
-                permute_classes=permute_classes,
-                seed=seed,
-                return_logits=False,
-            )
-
         root_ss = np.random.SeedSequence(seed)
         inner_seeds = root_ss.generate_state(n_ensembles)
         logit_cumsum = None
