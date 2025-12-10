@@ -3,4 +3,6 @@ tabdpt.egg-info/
 .cache
 uv.lock
 .venv/
+*csv
+*log
 eval_output/

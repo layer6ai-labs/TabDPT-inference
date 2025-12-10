@@ -2,8 +2,8 @@
 #!/bin/sh
 # Run bf16 with fp32 matmuls (bf16_fp32 baseline) on folds 0 and 1
 gpu=0
-results_folder="eval_precision"
-context=16384
+results_folder="eval_quantile"
+context=100000
 n_ensembles=1
 inf_batch_size=64
 mode=bf16_fp32
