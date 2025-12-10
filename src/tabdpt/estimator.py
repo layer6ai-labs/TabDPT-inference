@@ -73,6 +73,7 @@ class TabDPTEstimator(BaseEstimator):
             compile: Specifies whether to compile the model with torch before inference
             model_weight_path: path on file system specifying the model weights
                 If no path is specified, then the model weights are downloaded from HuggingFace
+            verbose: Specifies whether to add tqdm looping to ensemble estimator
 
         """
         self.mode = mode
@@ -198,3 +199,11 @@ class TabDPTEstimator(BaseEstimator):
             train_y = inv_perm[train_y].to(torch.float)
 
         return train_x, train_y, test_x
+
+    def _get_ensemble_iterator(self, n_ensembles: int, seed: int | None = None):
+        generator = np.random.SeedSequence(seed)
+        ensemble_iterator = generator.generate_state(n_ensembles)
+        if self.verbose:
+            from tqdm import tqdm
+            ensemble_iterator = tqdm(ensemble_iterator, desc="ensembles")
+        return ensemble_iterator
