@@ -209,11 +209,13 @@ You can do something similar to get the ranked table from this README and the pa
 
 ## Citation
 ```
-@article{ma2024tabdpt,
-  title={TabDPT: Scaling Tabular Foundation Models on Real Data},
-  author={Ma, Junwei and Thomas, Valentin and Hosseinzadeh, Rasa and Kamkari, Hamidreza and Labach, Alex and Cresswell, Jesse C and Golestan, Keyvan and Yu, Guangwei and Caterini, Anthony L and Volkovs, Maksims},
-  journal={arXiv preprint arXiv:2410.18164},
-  year={2024}
+@inproceedings{
+    ma2025tabdpt,
+    title={Tab{DPT}: Scaling Tabular Foundation Models on Real Data},
+    author={Junwei Ma and Valentin Thomas and Rasa Hosseinzadeh and Alex Labach and Hamidreza Kamkari and Jesse C. Cresswell and Keyvan Golestan and Guangwei Yu and Anthony L. Caterini and Maksims Volkovs},
+    booktitle={The Thirty-ninth Annual Conference on Neural Information Processing Systems},
+    year={2025},
+    url={https://openreview.net/forum?id=pIZxEOZCId}
 }
 ```
 
