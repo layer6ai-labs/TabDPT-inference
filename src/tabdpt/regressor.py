@@ -4,7 +4,6 @@ from typing import Literal
 import numpy as np
 import torch
 from sklearn.base import RegressorMixin
-from tqdm import tqdm
 
 from .estimator import TabDPTEstimator
 from .utils import generate_random_permutation, pad_x
@@ -24,6 +23,7 @@ class TabDPTRegressor(TabDPTEstimator, RegressorMixin):
         use_flash: bool = True,
         compile: bool = True,
         model_weight_path: str | None = None,
+        verbose: bool = True,
     ):
         super().__init__(
             mode="reg",
@@ -37,6 +37,7 @@ class TabDPTRegressor(TabDPTEstimator, RegressorMixin):
             use_flash=use_flash,
             compile=compile,
             model_weight_path=model_weight_path,
+            verbose=verbose,
         )
 
     @torch.no_grad()
@@ -101,10 +102,10 @@ class TabDPTRegressor(TabDPTEstimator, RegressorMixin):
             seed: int | None = None,
         ):
         prediction_cumsum = 0
-        generator = np.random.SeedSequence(seed)
-        for _, inner_seed in tqdm(zip(range(n_ensembles), generator.generate_state(n_ensembles))):
+        for inner_seed in self._get_ensemble_iterator(n_ensembles, seed):
             inner_seed = int(inner_seed)
             prediction_cumsum += self._predict(X, context_size=context_size, seed=inner_seed)
+
         return prediction_cumsum / n_ensembles
 
     def predict(

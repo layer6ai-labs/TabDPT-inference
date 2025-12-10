@@ -5,7 +5,6 @@ import numpy as np
 import torch
 from scipy.special import softmax
 from sklearn.base import ClassifierMixin
-from tqdm import tqdm
 
 from .estimator import TabDPTEstimator
 from .utils import generate_random_permutation, pad_x
@@ -25,6 +24,7 @@ class TabDPTClassifier(TabDPTEstimator, ClassifierMixin):
         use_flash: bool = True,
         compile: bool = True,
         model_weight_path: str | None = None,
+        verbose: bool = True,
     ):
         super().__init__(
             mode="cls",
@@ -38,6 +38,7 @@ class TabDPTClassifier(TabDPTEstimator, ClassifierMixin):
             use_flash=use_flash,
             compile=compile,
             model_weight_path=model_weight_path,
+            verbose=verbose,
         )
 
     def fit(self, X: np.ndarray, y: np.ndarray):
@@ -152,11 +153,8 @@ class TabDPTClassifier(TabDPTEstimator, ClassifierMixin):
         permute_classes: bool = True,
         seed: int | None = None,
     ):
-        root_ss = np.random.SeedSequence(seed)
-        inner_seeds = root_ss.generate_state(n_ensembles)
         logit_cumsum = None
-
-        for inner_seed in tqdm(inner_seeds, desc="ensembles"):
+        for inner_seed in self._get_ensemble_iterator(n_ensembles, seed):
             inner_seed = int(inner_seed)
             perm = torch.arange(self.num_classes)
             if permute_classes:
