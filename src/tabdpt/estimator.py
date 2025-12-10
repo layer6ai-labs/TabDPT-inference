@@ -44,6 +44,7 @@ class TabDPTEstimator(BaseEstimator):
         use_flash: bool = True,
         compile: bool = True,
         model_weight_path: str | None = None,
+        verbose: bool = True,
     ):
         """
         Initializes the TabDPT Estimator
@@ -106,6 +107,8 @@ class TabDPTEstimator(BaseEstimator):
         assert self.feature_reduction in ["pca", "subsample"], \
                 "feature_reduction must be 'pca' or 'subsample'"
         assert self.faiss_metric in ["l2", "ip"], 'faiss_metric must be "l2" or "ip"'
+
+        self.verbose = verbose
 
         self.normalizer = normalizer
         match normalizer:
