@@ -74,7 +74,9 @@ class TabDPTRegressor(TabDPTEstimator, RegressorMixin):
                 start = b * self.inf_batch_size
                 end = min(len(self.X_test), (b + 1) * self.inf_batch_size)
 
-                indices_nni = self._get_faiss_knn_indices(self.X_test[start:end], k=context_size, seed=seed)
+                indices_nni = self._get_faiss_knn_indices(
+                    self.X_test[start:end], context_size==context_size, seed=seed
+                )
                 X_nni = train_x[torch.tensor(indices_nni)]
                 y_nni = train_y[torch.tensor(indices_nni)]
 
