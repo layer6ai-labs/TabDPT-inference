@@ -41,12 +41,7 @@ class TabDPTRegressor(TabDPTEstimator, RegressorMixin):
         )
 
     @torch.no_grad()
-    def _predict(
-            self,
-            X: np.ndarray,
-            context_size: int | None = 2048,
-            seed: int | None = None,
-        ):
+    def _predict(self, X: np.ndarray, context_size: int | None = 2048, seed: int | None = None):
         train_x, train_y, test_x = self._prepare_prediction(X, seed=seed)
 
         if context_size is None:
