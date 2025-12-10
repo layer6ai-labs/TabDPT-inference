@@ -40,8 +40,16 @@ class TabDPTRegressor(TabDPTEstimator, RegressorMixin):
         )
 
     @torch.no_grad()
-    def _predict(self, X: np.ndarray, context_size: int = 2048, seed: int | None = None):
+    def _predict(
+            self,
+            X: np.ndarray,
+            context_size: int | None = 2048,
+            seed: int | None = None,
+        ):
         train_x, train_y, test_x = self._prepare_prediction(X, seed=seed)
+
+        if context_size is None:
+            context_size = np.inf
 
         if seed is not None:
             feat_perm = generate_random_permutation(train_x.shape[1], seed)
@@ -85,7 +93,13 @@ class TabDPTRegressor(TabDPTEstimator, RegressorMixin):
 
             return torch.cat(pred_list).squeeze().detach().cpu().float().numpy()
 
-    def _ensemble_predict(self, X: np.ndarray, n_ensembles: int = 8, context_size: int = 2048, seed: int | None = None):
+    def _ensemble_predict(
+            self,
+            X: np.ndarray,
+            n_ensembles: int = 8,
+            context_size: int | None = 2048,
+            seed: int | None = None,
+        ):
         prediction_cumsum = 0
         generator = np.random.SeedSequence(seed)
         for _, inner_seed in tqdm(zip(range(n_ensembles), generator.generate_state(n_ensembles))):
@@ -93,7 +107,13 @@ class TabDPTRegressor(TabDPTEstimator, RegressorMixin):
             prediction_cumsum += self._predict(X, context_size=context_size, seed=inner_seed)
         return prediction_cumsum / n_ensembles
 
-    def predict(self, X: np.ndarray, n_ensembles: int = 8, context_size: int = 2048, seed: int | None = None):
+    def predict(
+            self,
+            X: np.ndarray,
+            n_ensembles: int = 8,
+            context_size: int | None = 2048,
+            seed: int | None = None,
+        ):
         if n_ensembles == 1:
             return self._predict(X, context_size=context_size, seed=seed)
         else:

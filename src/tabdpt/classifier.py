@@ -73,12 +73,15 @@ class TabDPTClassifier(TabDPTEstimator, ClassifierMixin):
         self,
         X: np.ndarray,
         temperature: float = 0.8,
-        context_size: int = 2048,
+        context_size: int | None = 2048,
         return_logits: bool = False,
         seed: int | None = None,
         class_perm: np.ndarray | None = None,
     ):
         train_x, train_y, test_x = self._prepare_prediction(X, class_perm=class_perm, seed=seed)
+
+        if context_size is None:
+            context_size = np.inf
 
         if seed is not None:
             feat_perm = generate_random_permutation(train_x.shape[1], seed)
