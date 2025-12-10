@@ -74,15 +74,17 @@ class TabDPTClassifier(TabDPTEstimator, ClassifierMixin):
         self,
         X: np.ndarray,
         temperature: float = 0.8,
-        context_size: int = 2048,
+        context_size: int | None = 2048,
         return_logits: bool = False,
         seed: int | None = None,
         class_perm: np.ndarray | None = None,
     ):
         train_x, train_y, test_x = self._prepare_prediction(X, class_perm=class_perm, seed=seed)
 
+        if context_size is None:
+            context_size = np.inf
+
         if seed is not None:
-            self.faiss_knn.index.seed = seed
             feat_perm = generate_random_permutation(train_x.shape[1], seed)
             train_x = train_x[:, feat_perm]
             test_x = test_x[:, feat_perm]
@@ -111,7 +113,9 @@ class TabDPTClassifier(TabDPTEstimator, ClassifierMixin):
                 start = b * self.inf_batch_size
                 end = min(len(self.X_test), (b + 1) * self.inf_batch_size)
 
-                indices_nni = self.faiss_knn.get_knn_indices(self.X_test[start:end], k=context_size)
+                indices_nni = self._get_faiss_knn_indices(
+                    self.X_test[start:end], context_size=context_size, seed=seed
+                )
                 X_nni = train_x[torch.tensor(indices_nni)]
                 y_nni = train_y[torch.tensor(indices_nni)]
 

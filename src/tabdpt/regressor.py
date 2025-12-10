@@ -41,11 +41,13 @@ class TabDPTRegressor(TabDPTEstimator, RegressorMixin):
         )
 
     @torch.no_grad()
-    def _predict(self, X: np.ndarray, context_size: int = 2048, seed: int | None = None):
+    def _predict(self, X: np.ndarray, context_size: int | None = 2048, seed: int | None = None):
         train_x, train_y, test_x = self._prepare_prediction(X, seed=seed)
 
+        if context_size is None:
+            context_size = np.inf
+
         if seed is not None:
-            self.faiss_knn.index.seed = seed
             feat_perm = generate_random_permutation(train_x.shape[1], seed)
             train_x = train_x[:, feat_perm]
             test_x = test_x[:, feat_perm]
@@ -67,7 +69,9 @@ class TabDPTRegressor(TabDPTEstimator, RegressorMixin):
                 start = b * self.inf_batch_size
                 end = min(len(self.X_test), (b + 1) * self.inf_batch_size)
 
-                indices_nni = self.faiss_knn.get_knn_indices(self.X_test[start:end], k=context_size)
+                indices_nni = self._get_faiss_knn_indices(
+                    self.X_test[start:end], context_size=context_size, seed=seed
+                )
                 X_nni = train_x[torch.tensor(indices_nni)]
                 y_nni = train_y[torch.tensor(indices_nni)]
 
@@ -87,7 +91,13 @@ class TabDPTRegressor(TabDPTEstimator, RegressorMixin):
 
             return torch.cat(pred_list).squeeze().detach().cpu().float().numpy()
 
-    def _ensemble_predict(self, X: np.ndarray, n_ensembles: int = 8, context_size: int = 2048, seed: int | None = None):
+    def _ensemble_predict(
+            self,
+            X: np.ndarray,
+            n_ensembles: int = 8,
+            context_size: int | None = 2048,
+            seed: int | None = None,
+        ):
         prediction_cumsum = 0
         for inner_seed in self._get_ensemble_iterator(n_ensembles, seed):
             inner_seed = int(inner_seed)
@@ -95,7 +105,13 @@ class TabDPTRegressor(TabDPTEstimator, RegressorMixin):
 
         return prediction_cumsum / n_ensembles
 
-    def predict(self, X: np.ndarray, n_ensembles: int = 8, context_size: int = 2048, seed: int | None = None):
+    def predict(
+            self,
+            X: np.ndarray,
+            n_ensembles: int = 8,
+            context_size: int | None = 2048,
+            seed: int | None = None,
+        ):
         if n_ensembles == 1:
             return self._predict(X, context_size=context_size, seed=seed)
         else:
