@@ -12,7 +12,7 @@ from sklearn.preprocessing import StandardScaler, MinMaxScaler, RobustScaler, Po
 from sklearn.utils.validation import check_is_fitted
 
 from .model import TabDPTModel
-from .utils import FAISS, convert_to_torch_tensor, Log1pScaler, generate_random_permutation
+from .utils import convert_to_torch_tensor, Log1pScaler, generate_random_permutation
 
 # Constants for model caching and download
 _VERSION = "1_1"
@@ -101,6 +101,8 @@ class TabDPTEstimator(BaseEstimator):
         self.compile = compile and self.device == "cuda"
         self.feature_reduction = feature_reduction
         self.faiss_metric = faiss_metric
+        self.faiss_knn = None
+
         assert self.mode in ["cls", "reg"], "mode must be 'cls' or 'reg'"
         assert self.feature_reduction in ["pca", "subsample"], \
                 "feature_reduction must be 'pca' or 'subsample'"
@@ -150,7 +152,6 @@ class TabDPTEstimator(BaseEstimator):
         if self.normalizer == 'quantile-uniform':
             X = 2*X - 1
 
-        self.faiss_knn = FAISS(X, metric=self.faiss_metric)
         self.n_instances, self.n_features = X.shape
         self.X_train = X
         self.y_train = y
@@ -161,6 +162,15 @@ class TabDPTEstimator(BaseEstimator):
         self.is_fitted_ = True
         if self.compile:
             self.model = torch.compile(self.model)
+
+    def _get_faiss_knn_indices(self, X_test: np.ndarray, context_size: int, seed: int | None = None):
+        if self.faiss_knn is None:  # Lazily perform initialization
+            from .utils import FAISS
+            self.faiss_knn = FAISS(self.X_train, metric=self.faiss_metric)
+            if seed is not None:
+                self.faiss_knn.index.seed = seed
+
+        return self.faiss_knn.get_knn_indices(X_test, k=context_size)
 
     def _prepare_prediction(self, X: np.ndarray, class_perm: np.ndarray | None = None, seed: int | None = None):
         check_is_fitted(self)
