@@ -136,6 +136,8 @@ class TabDPTEstimator(BaseEstimator):
                     '["standard", "minmax", "robust", "power", "quantile-uniform", "quantile-normal", "log1p", None]'
                 )
 
+        self.V = None
+
     def fit(self, X: np.ndarray, y: np.ndarray):
         assert isinstance(X, np.ndarray), "X must be a numpy array"
         assert isinstance(y, np.ndarray), "y must be a numpy array"
@@ -165,13 +167,13 @@ class TabDPTEstimator(BaseEstimator):
 
         self.is_fitted_ = True
         if self.compile:
-            self.model = torch.compile(self.model)
+            self.model.compile()
 
     def to(self, device: str):
         self.device = device
         self.model.to(device)
 
-        if self.is_fitted_ and self.n_features > self.max_features and self.feature_reduction == "pca":
+        if self.V is not None:
             self.V.to(device)
 
     def _get_faiss_knn_indices(self, X_test: np.ndarray, context_size: int, seed: int | None = None):
