@@ -167,6 +167,13 @@ class TabDPTEstimator(BaseEstimator):
         if self.compile:
             self.model = torch.compile(self.model)
 
+    def to(self, device: str):
+        self.device = device
+        self.model.to(device)
+
+        if self.is_fitted_ and self.n_features > self.max_features and self.feature_reduction == "pca":
+            self.V.to(device)
+
     def _get_faiss_knn_indices(self, X_test: np.ndarray, context_size: int, seed: int | None = None):
         if self.faiss_knn is None:  # Lazily perform initialization
             from .utils import FAISS
