@@ -174,7 +174,7 @@ class TabDPTEstimator(BaseEstimator):
         self.model.to(device)
 
         if self.V is not None:
-            self.V.to(device)
+            self.V = self.V.to(device)
 
     def _get_faiss_knn_indices(self, X_test: np.ndarray, context_size: int, seed: int | None = None):
         if self.faiss_knn is None:  # Lazily perform initialization
