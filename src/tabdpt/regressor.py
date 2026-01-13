@@ -62,7 +62,7 @@ class TabDPTRegressor(TabDPTEstimator, RegressorMixin):
                 task=self.mode,
             )
 
-            return pred.float().squeeze().detach().cpu().float().numpy()
+            return pred.float().squeeze(1).detach().cpu().float().numpy()
         else:
             pred_list = []
             for b in range(math.ceil(len(self.X_test) / self.inf_batch_size)):
@@ -89,7 +89,7 @@ class TabDPTRegressor(TabDPTEstimator, RegressorMixin):
 
                 pred_list.append(pred.squeeze(dim=0))
 
-            return torch.cat(pred_list).squeeze().detach().cpu().float().numpy()
+            return torch.cat(pred_list).detach().cpu().float().numpy()
 
     def _ensemble_predict(
             self,
