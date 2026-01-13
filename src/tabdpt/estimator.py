@@ -165,6 +165,9 @@ class TabDPTEstimator(BaseEstimator):
             train_x = convert_to_torch_tensor(self.X_train).to(self.device).float()
             _, _, self.V = torch.pca_lowrank(train_x, q=min(train_x.shape[0], self.max_features))
 
+        # Reset in case the model was previously fit, this will be lazily initialized
+        self.faiss_knn = None
+
         self.is_fitted_ = True
         if self.compile:
             self.model.compile()
