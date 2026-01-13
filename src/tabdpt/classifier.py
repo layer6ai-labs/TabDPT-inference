@@ -144,6 +144,9 @@ class TabDPTClassifier(TabDPTEstimator, ClassifierMixin):
                 pred_list.append(pred.squeeze(dim=0))
             pred_val = torch.cat(pred_list, dim=0).squeeze().detach().cpu().float().numpy()
 
+        # Ensure pred_val is always (n_samples, n_classes) even for a single sample.
+        if pred_val.ndim == 1:
+            pred_val = pred_val[None, :]  # (n_classes,) -> (1, n_classes)
         return pred_val
 
     def ensemble_predict_proba(
