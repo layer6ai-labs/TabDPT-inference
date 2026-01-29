@@ -108,7 +108,7 @@ TabDPT uses retrieval and self-supervised learning to remove constraints on data
 		<!---
 		<tr class="even">
 			<td style="text-align: center;"><a href="https://arxiv.org/abs/2406.05207">TabPFN (kNN)</a></td>
-			<td>0.959 <sub><sup>[0.956, 0.962]</sup></sub></td>https://pypi.org/project/tabdpt/
+			<td>0.959 <sub><sup>[0.956, 0.962]</sup></sub></td>
 			<td>0.884 <sub><sup>[0.881, 0.887]</sup></sub></td>
 			<td style="text-align: center;">N/A</td>
 			<td style="text-align: center;">N/A</td>
