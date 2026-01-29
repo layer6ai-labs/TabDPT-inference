@@ -4,6 +4,7 @@
 
 [![arxiv](https://img.shields.io/static/v1?label=arXiv&message=2410.18164&color=B31B1B&logo=arXiv)](https://arxiv.org/abs/2410.18164)
 [![huggingface](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Model-FFD21E)](https://huggingface.co/Layer6/TabDPT)
+[![pypi](https://img.shields.io/badge/PyPI-tabdpt-3775A9?logo=pypi)](https://pypi.org/project/tabdpt/)
 
 </div>
 
@@ -13,9 +14,14 @@ This repository provides lightweight interface code to generate predictions on n
 
 ## Usage
 
-### Installation
+TabDPT is available on PyPI, and can be installed with:
+```
+pip install tabdpt
+```
 
-TabDPT is available on [Hugging Face](https://huggingface.co/Layer6/TabDPT).
+Model weights are available on [Hugging Face](https://huggingface.co/Layer6/TabDPT). They will be automatically downloaded on first use.
+
+### Installation From Source
 
 To set up this repo, first ensure you have Python 3.10 or 3.11. Then, run the following:
 ```
@@ -102,7 +108,7 @@ TabDPT uses retrieval and self-supervised learning to remove constraints on data
 		<!---
 		<tr class="even">
 			<td style="text-align: center;"><a href="https://arxiv.org/abs/2406.05207">TabPFN (kNN)</a></td>
-			<td>0.959 <sub><sup>[0.956, 0.962]</sup></sub></td>
+			<td>0.959 <sub><sup>[0.956, 0.962]</sup></sub></td>https://pypi.org/project/tabdpt/
 			<td>0.884 <sub><sup>[0.881, 0.887]</sup></sub></td>
 			<td style="text-align: center;">N/A</td>
 			<td style="text-align: center;">N/A</td>
@@ -219,4 +225,4 @@ You can do something similar to get the ranked table from this README and the pa
 }
 ```
 
-© Copyright 2024-2025 The Toronto-Dominion Bank and/or its affiliates
+© Copyright 2024-2026 The Toronto-Dominion Bank and/or its affiliates
