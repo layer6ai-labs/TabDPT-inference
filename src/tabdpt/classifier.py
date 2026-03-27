@@ -158,6 +158,9 @@ class TabDPTClassifier(TabDPTEstimator, ClassifierMixin):
         permute_classes: bool = True,
         seed: int | None = None,
     ):
+        if n_ensembles == 1:
+            return self.predict_proba(X, temperature=temperature, context_size=context_size, seed=seed)
+
         logit_cumsum = None
         for inner_seed in self._get_ensemble_iterator(n_ensembles, seed):
             inner_seed = int(inner_seed)
