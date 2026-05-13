@@ -33,7 +33,7 @@ class TabDPTEstimator(BaseEstimator):
     def __init__(
         self,
         mode: Literal["cls", "reg"],
-        inf_batch_size: int = None,
+        inf_batch_size: int | None = None,
         normalizer: Literal["standard", "minmax", "robust", "power", "quantile-uniform", "quantile-normal", "log1p"] | None
             = "standard",
         missing_indicators: bool = False,
