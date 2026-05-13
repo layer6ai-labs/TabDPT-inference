@@ -1,5 +1,6 @@
 import json
 from typing import Literal
+import warnings
 
 import numpy as np
 import torch
@@ -18,7 +19,6 @@ from .utils import convert_to_torch_tensor, Log1pScaler, generate_random_permuta
 _VERSION = "1_1"
 _MODEL_NAME = f"tabdpt{_VERSION}.safetensors"
 _HF_REPO_ID = "Layer6/TabDPT"
-CPU_INF_BATCH = 16
 
 
 class TabDPTEstimator(BaseEstimator):
@@ -33,7 +33,7 @@ class TabDPTEstimator(BaseEstimator):
     def __init__(
         self,
         mode: Literal["cls", "reg"],
-        inf_batch_size: int = 512,
+        inf_batch_size: int = None,
         normalizer: Literal["standard", "minmax", "robust", "power", "quantile-uniform", "quantile-normal", "log1p"] | None
             = "standard",
         missing_indicators: bool = False,
@@ -51,7 +51,7 @@ class TabDPTEstimator(BaseEstimator):
         Args:
             mode: Defines what mode the estimator is
                 "cls" is classification, "reg" is regression
-            inf_batch_size: The batch size for inferencing
+            inf_batch_size: The batch size for inference. Defaults to 512 on CUDA and 16 on CPU.
             normalizer: Specifies normalization used for preprocessing before retrieval. Note that
                 the model performs additional normalization in its forward function. By default the
                 scikit-learn StandardScaler is used, which matches model training. Other options are:
@@ -79,7 +79,18 @@ class TabDPTEstimator(BaseEstimator):
         """
         self.mode = mode
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
-        self.inf_batch_size = inf_batch_size if self.device == "cuda" else min(inf_batch_size, CPU_INF_BATCH)
+        if inf_batch_size is None:
+            if self.device == "cpu":
+                self.inf_batch_size = 16
+                warnings.warn(
+                    "Using TabDPT on CPU, so setting inf_batch_size to 16. This helps to prevent "
+                    "OOMs but can result in excessively slow inference, especially if retrieval is "
+                    "not being used. Set inf_batch_size explicitly to suppress this warning."
+                )
+            else:
+                self.inf_batch_size = 512
+        else:
+            self.inf_batch_size = inf_batch_size
         self.use_flash = use_flash and self.device == "cuda"
         self.missing_indicators = missing_indicators
 

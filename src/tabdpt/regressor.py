@@ -12,7 +12,7 @@ from .utils import generate_random_permutation, pad_x
 class TabDPTRegressor(TabDPTEstimator, RegressorMixin):
     def __init__(
         self,
-        inf_batch_size: int = 512,
+        inf_batch_size: int = None,
         normalizer: Literal["standard", "minmax", "robust", "power", "quantile-uniform", "quantile-normal", "log1p"] | None
             = "standard",
         missing_indicators: bool = False,
@@ -52,19 +52,25 @@ class TabDPTRegressor(TabDPTEstimator, RegressorMixin):
             train_x = train_x[:, feat_perm]
             test_x = test_x[:, feat_perm]
 
+        pred_list = []
         if context_size >= self.n_instances:
             X_train = pad_x(train_x[None, :, :], self.max_features).to(self.device)
             X_test = pad_x(test_x[None, :, :], self.max_features).to(self.device)
             y_train = train_y[None, :].float()
-            pred = self.model(
-                x_src=torch.cat([X_train, X_test], dim=1),
-                y_src=y_train.unsqueeze(-1),
-                task=self.mode,
-            )
 
-            return pred.float().squeeze(1).detach().cpu().float().numpy()
+            for b in range(math.ceil(len(self.X_test) / self.inf_batch_size)):
+                start = b * self.inf_batch_size
+                end = min(len(self.X_test), (b + 1) * self.inf_batch_size)
+
+                pred = self.model(
+                    x_src=torch.cat([X_train, X_test[:, start:end]], dim=1),
+                    y_src=y_train.unsqueeze(-1),
+                    task=self.mode,
+                )
+                pred_list.append(pred.squeeze(1))
+
+            return torch.cat(pred_list).detach().cpu().float().numpy()
         else:
-            pred_list = []
             for b in range(math.ceil(len(self.X_test) / self.inf_batch_size)):
                 start = b * self.inf_batch_size
                 end = min(len(self.X_test), (b + 1) * self.inf_batch_size)

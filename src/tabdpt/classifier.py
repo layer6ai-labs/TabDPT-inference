@@ -13,7 +13,7 @@ from .utils import generate_random_permutation, pad_x
 class TabDPTClassifier(TabDPTEstimator, ClassifierMixin):
     def __init__(
         self,
-        inf_batch_size: int = 512,
+        inf_batch_size: int = None,
         normalizer: Literal["standard", "minmax", "robust", "power", "quantile-uniform", "quantile-normal", "log1p"] | None
             = "standard",
         missing_indicators: bool = False,
@@ -89,26 +89,30 @@ class TabDPTClassifier(TabDPTEstimator, ClassifierMixin):
             train_x = train_x[:, feat_perm]
             test_x = test_x[:, feat_perm]
 
+        pred_list = []
         if context_size >= self.n_instances:
             X_train = pad_x(train_x[None, :, :], self.max_features).to(self.device)
             X_test = pad_x(test_x[None, :, :], self.max_features).to(self.device)
             y_train = train_y[None, :].float()
 
-            if self.num_classes <= self.max_num_classes:
-                pred = self.model(
-                    x_src=torch.cat([X_train, X_test], dim=1),
-                    y_src=y_train.unsqueeze(-1),
-                    task=self.mode,
-                )
-            else:
-                pred = self._predict_large_cls(X_train, X_test, y_train)
+            for b in range(math.ceil(len(self.X_test) / self.inf_batch_size)):
+                start = b * self.inf_batch_size
+                end = min(len(self.X_test), (b + 1) * self.inf_batch_size)
 
-            if not return_logits:
-                pred = pred[..., :self.num_classes] / temperature
-                pred = torch.nn.functional.softmax(pred.float(), dim=-1)
-            pred_val = pred.float().squeeze().detach().cpu().numpy()
+                if self.num_classes <= self.max_num_classes:
+                    pred = self.model(
+                        x_src=torch.cat([X_train, X_test[:, start:end]], dim=1),
+                        y_src=y_train.unsqueeze(-1),
+                        task=self.mode,
+                    )
+                else:
+                    pred = self._predict_large_cls(X_train, X_test[:, start:end], y_train)
+
+                if not return_logits:
+                    pred = pred[..., :self.num_classes] / temperature
+                    pred = torch.nn.functional.softmax(pred.float(), dim=-1)
+                pred_list.append(pred.squeeze(1))
         else:
-            pred_list = []
             for b in range(math.ceil(len(self.X_test) / self.inf_batch_size)):
                 start = b * self.inf_batch_size
                 end = min(len(self.X_test), (b + 1) * self.inf_batch_size)
@@ -142,7 +146,8 @@ class TabDPTClassifier(TabDPTEstimator, ClassifierMixin):
                     pred /= pred.sum(axis=-1, keepdims=True)  # numerical stability
 
                 pred_list.append(pred.squeeze(dim=0))
-            pred_val = torch.cat(pred_list, dim=0).squeeze().detach().cpu().float().numpy()
+
+        pred_val = torch.cat(pred_list, dim=0).detach().cpu().float().numpy()
 
         # Ensure pred_val is always (n_samples, n_classes) even for a single sample.
         if pred_val.ndim == 1:
