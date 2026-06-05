@@ -21,12 +21,12 @@ REG_DATASET_PATH = "tabdpt_datasets/data_splits/reg_datasets.csv"
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run TabDPT evaluation")
-    parser.add_argument("--context_size", type=int, default=2048, help="Context size for the model")
+    parser.add_argument("--context_size", type=int, help="Context size for the model")
     parser.add_argument("--fold", type=int, default=0, help="Fold number to use for evaluation")
     parser.add_argument("--n-ensembles", type=int, default=8, help="Number of ensembles to use for evaluation")
-    parser.add_argument("--temperature", type=float, default=0.8, help="Temperature for classification")
+    parser.add_argument("--temperature", type=float, default=1., help="Temperature for classification")
     parser.add_argument("--seed", type=int, default=0, help="Model evaluation seed")
-    parser.add_argument("--inf-batch-size", type=int, default=512, help="Batch size for inference")
+    parser.add_argument("--batch-size", type=int, help="Batch size for inference")
     parser.add_argument("--use-cpu", action="store_true", help="If true, use CPU for evalutation")
     parser.add_argument("--gpu-to-use", type=int, default=0, help="Which GPU to use")
     parser.add_argument("--results-folder", type=str, default="eval_output", help="Parent results directory")
@@ -61,8 +61,8 @@ if __name__ == "__main__":
         "train_time": [],
         "inference_time": [],
     }
-    model_cls = TabDPTClassifier(inf_batch_size=args.inf_batch_size, device=device)
-    model_reg = TabDPTRegressor(inf_batch_size=args.inf_batch_size, device=device)
+    model_cls = TabDPTClassifier(device=device)
+    model_reg = TabDPTRegressor(device=device)
 
     pbar = tqdm(
         itertools.chain(itertools.product(["cls"], cc18_dids), itertools.product(["reg"], ctr23_dids)),
@@ -100,6 +100,7 @@ if __name__ == "__main__":
                 X_test,
                 temperature=args.temperature,
                 context_size=args.context_size,
+                batch_size=args.batch_size,
                 n_ensembles=args.n_ensembles,
                 seed=args.seed,
             )
@@ -127,7 +128,11 @@ if __name__ == "__main__":
 
             t1 = time()
             pred_val_scaled = model.predict(
-                X_test, context_size=args.context_size, n_ensembles=args.n_ensembles, seed=args.seed
+                X_test,
+                context_size=args.context_size,
+                batch_size=args.batch_size,
+                n_ensembles=args.n_ensembles,
+                seed=args.seed
             )
             inference_time = time() - t1
             pred_val = scaler.inverse_transform(pred_val_scaled.reshape(-1, 1)).ravel()
