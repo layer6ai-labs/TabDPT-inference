@@ -13,10 +13,10 @@ from sklearn.preprocessing import StandardScaler, MinMaxScaler, RobustScaler, Po
 from sklearn.utils.validation import check_is_fitted
 
 from .model import TabDPTModel
-from .utils import convert_to_torch_tensor, Log1pScaler, generate_random_permutation
+from .utils import convert_to_torch_tensor, Log1pScaler, generate_random_permutation, pad_x
 
 # Constants for model caching and download
-_VERSION = "1_1"
+_VERSION = "1_2"
 _MODEL_NAME = f"tabdpt{_VERSION}.safetensors"
 _HF_REPO_ID = "Layer6/TabDPT"
 
@@ -33,12 +33,12 @@ class TabDPTEstimator(BaseEstimator):
     def __init__(
         self,
         mode: Literal["cls", "reg"],
-        inf_batch_size: int | None = None,
         normalizer: Literal["standard", "minmax", "robust", "power", "quantile-uniform", "quantile-normal", "log1p"] | None
             = "standard",
         missing_indicators: bool = False,
-        clip_sigma: float = 4.,
+        clip_sigma: float = 8.,
         feature_reduction: Literal["pca", "subsample"] = "pca",
+        context_reduction: Literal["retrieval", "subsample", "subsample-balanced"] = "subsample",
         faiss_metric: Literal["l2", "ip"] = "l2",
         device: str = None,
         use_flash: bool = True,
@@ -51,7 +51,6 @@ class TabDPTEstimator(BaseEstimator):
         Args:
             mode: Defines what mode the estimator is
                 "cls" is classification, "reg" is regression
-            inf_batch_size: The batch size for inference. Defaults to 512 on CUDA and 16 on CPU.
             normalizer: Specifies normalization used for preprocessing before retrieval. Note that
                 the model performs additional normalization in its forward function. By default the
                 scikit-learn StandardScaler is used, which matches model training. Other options are:
@@ -67,7 +66,17 @@ class TabDPTEstimator(BaseEstimator):
             clip_sigma: n*sigma used for outlier clipping
             feature_reduction: Method used to reduce the number of features when over the model's
                 limit, either "pca" or "subsample"
-            faiss_metric: Distance used for retrieval, either "l2" or "ip"
+            context_reduction: Method used to reduce training rows when train size exceeds
+                context_size at predict time:
+                - "subsample": random subset of training rows (shared across test points);
+                  stacked on the sequence axis with eval rows, same as full-context inference
+                - "subsample-balanced": class-balanced random subset (classification only);
+                  same stacked layout as subsample
+                - "retrieval": per test point, nearest training rows in feature space (FAISS);
+                  batched with one eval row per test point. When using retrieval, memory usage
+                  scales much faster with the number of inference instances, so a lower
+                  batch_size might have to be used.
+            faiss_metric: Distance used for kNN context reduction, either "l2" or "ip"
             device: Specifies the computational device (e.g., CPU, GPU)
                 Identical to https://docs.pytorch.org/docs/stable/generated/torch.cuda.device.html
             use_flash: Specifies whether to use flash attention or not
@@ -79,18 +88,6 @@ class TabDPTEstimator(BaseEstimator):
         """
         self.mode = mode
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
-        if inf_batch_size is None:
-            if self.device == "cpu":
-                self.inf_batch_size = 16
-                warnings.warn(
-                    "Using TabDPT on CPU, so setting inf_batch_size to 16. This helps to prevent "
-                    "OOMs but can result in excessively slow inference, especially if retrieval is "
-                    "not being used. Set inf_batch_size explicitly to suppress this warning."
-                )
-            else:
-                self.inf_batch_size = 512
-        else:
-            self.inf_batch_size = inf_batch_size
         self.use_flash = use_flash and self.device == "cuda"
         self.missing_indicators = missing_indicators
 
@@ -113,12 +110,17 @@ class TabDPTEstimator(BaseEstimator):
         self.max_num_classes = self.model.n_out
         self.compile = compile and self.device == "cuda"
         self.feature_reduction = feature_reduction
+        self.context_reduction = context_reduction
         self.faiss_metric = faiss_metric
         self.faiss_knn = None
 
         assert self.mode in ["cls", "reg"], "mode must be 'cls' or 'reg'"
         assert self.feature_reduction in ["pca", "subsample"], \
                 "feature_reduction must be 'pca' or 'subsample'"
+        assert self.context_reduction in ["retrieval", "subsample", "subsample-balanced"], \
+                "context_reduction must be 'retrieval', 'subsample', or 'subsample-balanced'"
+        if self.mode == "reg" and self.context_reduction == "subsample-balanced":
+            raise ValueError("context_reduction='subsample-balanced' is only supported for classification")
         assert self.faiss_metric in ["l2", "ip"], 'faiss_metric must be "l2" or "ip"'
 
         self.verbose = verbose
@@ -198,6 +200,73 @@ class TabDPTEstimator(BaseEstimator):
                 self.faiss_knn.index.seed = seed
 
         return self.faiss_knn.get_knn_indices(X_test, k=context_size)
+
+    def _get_subsample_indices(self, context_size: int, seed: int | None = None) -> np.ndarray:
+        perm = generate_random_permutation(self.n_instances, seed)
+        return perm[:context_size].cpu().numpy()
+
+    def _get_balanced_subsample_indices(self, context_size: int, seed: int | None = None) -> np.ndarray:
+        rng = np.random.default_rng(seed)
+        # Identify unique classes and indices for each class in y_train
+        classes = np.unique(self.y_train)
+        class_indices = {c: np.where(self.y_train == c)[0] for c in classes}
+
+        per_class = context_size // len(classes)  # Minimum samples per class
+        remainder = context_size % len(classes)   # How many will need an extra sample to distribute exactly
+
+        selected_parts = []
+        for i, c in enumerate(classes):
+            # Distribute extra samples among the first 'remainder' classes
+            quota = per_class + (1 if i < remainder else 0)
+            idx = class_indices[c]
+            # Take as many as possible, up to the quota, with no replacement
+            n_take = min(quota, len(idx))
+            selected_parts.append(rng.choice(idx, size=n_take, replace=False))
+
+        # Combine all sampled indices
+        selected = np.concatenate(selected_parts)
+        # If not enough samples (some classes had too few members), fill randomly from remaining indices
+        if len(selected) < context_size:
+            remaining = np.setdiff1d(np.arange(self.n_instances), selected)
+            n_need = context_size - len(selected)
+            if len(remaining) > 0:
+                n_take = min(n_need, len(remaining))
+                selected = np.concatenate([selected, rng.choice(remaining, size=n_take, replace=False)])
+
+        return selected
+
+    def _get_context_indices(
+        self, X_test: np.ndarray, context_size: int, seed: int | None = None
+    ) -> np.ndarray:
+        if self.context_reduction == "retrieval":
+            return self._get_faiss_knn_indices(X_test, context_size=context_size, seed=seed)
+        if self.context_reduction == "subsample":
+            return self._get_subsample_indices(context_size, seed)
+        if self.context_reduction == "subsample-balanced":
+            return self._get_balanced_subsample_indices(context_size, seed)
+        raise ValueError(f"Invalid context reduction mode: {self.context_reduction}")
+
+    def _uses_stacked_context(self, context_size: float) -> bool:
+        if context_size >= self.n_instances:
+            return True
+        return self.context_reduction in ("subsample", "subsample-balanced")
+
+    def _prepare_stacked_context(
+        self,
+        train_x: torch.Tensor,
+        train_y: torch.Tensor,
+        context_size: float,
+        seed: int | None,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        if context_size >= self.n_instances:
+            ctx_x, ctx_y = train_x, train_y
+        else:
+            idx = self._get_context_indices(self.X_test, int(context_size), seed=seed)
+            ctx_x = train_x[idx]
+            ctx_y = train_y[idx]
+        X_ctx = pad_x(ctx_x[None, :, :], self.max_features).to(self.device)
+        y_ctx = ctx_y[None, :].float()
+        return X_ctx, y_ctx
 
     def _prepare_prediction(self, X: np.ndarray, class_perm: np.ndarray | None = None, seed: int | None = None):
         check_is_fitted(self)

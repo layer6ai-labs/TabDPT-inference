@@ -13,8 +13,8 @@ model.fit(X_train, y_train)
 y_pred = model.predict(
     X_test,
     n_ensembles=8,
-    temperature=0.8,
-    context_size=2048,
+    temperature=1.,
+    context_size=None,
     permute_classes=True,
     seed=42,
 )
