@@ -1,12 +1,53 @@
 import math
-from typing import Literal
+from functools import partial
+from typing import Literal, TypedDict, overload
 
 import numpy as np
 import torch
 from sklearn.base import RegressorMixin
 
+from .bar_distribution import BarDistribution
 from .estimator import TabDPTEstimator
-from .utils import generate_random_permutation, pad_x, normalize_data
+from .utils import convert_to_torch_tensor, generate_random_permutation, normalize_data, pad_x
+
+REGRESSION_CONSTANT_TARGET_BORDER_EPSILON = 1e-5
+
+OutputType = Literal["mean", "median", "mode", "quantiles", "full", "main"]
+
+
+class MainOutputDict(TypedDict):
+    mean: np.ndarray
+    median: np.ndarray
+    mode: np.ndarray
+    quantiles: list[np.ndarray]
+
+
+class FullOutputDict(MainOutputDict):
+    criterion: BarDistribution
+    logits: torch.Tensor
+
+
+RegressionResultType = np.ndarray | list[np.ndarray] | MainOutputDict | FullOutputDict
+
+
+def _logits_to_output(
+    *,
+    output_type: str,
+    logits: torch.Tensor,
+    criterion: BarDistribution,
+    quantiles: list[float],
+) -> np.ndarray | list[np.ndarray]:
+    if output_type == "quantiles":
+        return [criterion.icdf(logits, q).cpu().detach().numpy() for q in quantiles]
+    if output_type == "mean":
+        output = criterion.mean(logits)
+    elif output_type == "median":
+        output = criterion.median(logits)
+    elif output_type == "mode":
+        output = criterion.mode(logits)
+    else:
+        raise ValueError(f"Invalid output type: {output_type}")
+    return output.cpu().detach().numpy()
 
 
 class TabDPTRegressor(TabDPTEstimator, RegressorMixin):
@@ -40,26 +81,56 @@ class TabDPTRegressor(TabDPTEstimator, RegressorMixin):
             verbose=verbose,
         )
 
-    def _expectation_from_regression_logits(self, reg_logits: torch.Tensor) -> torch.Tensor:
-        edges = torch.linspace(
+    def fit(self, X: np.ndarray, y: np.ndarray):
+        super().fit(X, y)
+        self._initialize_regression_state()
+        return self
+
+    def _initialize_regression_state(self):
+        train_y = convert_to_torch_tensor(self.y_train).float()
+        _, mean_y, std_y = normalize_data(train_y, return_mean_std=True)
+        self.y_train_mean_ = float(mean_y.item())
+        self.y_train_std_ = float(std_y.item())
+
+        self.is_constant_target_ = len(np.unique(self.y_train)) == 1
+        self.constant_value_ = float(self.y_train[0]) if self.is_constant_target_ else None
+
+        if self.is_constant_target_:
+            border_adjustment = max(
+                abs(self.constant_value_ * REGRESSION_CONSTANT_TARGET_BORDER_EPSILON),
+                REGRESSION_CONSTANT_TARGET_BORDER_EPSILON,
+            )
+            raw_borders = torch.tensor(
+                [
+                    self.constant_value_ - border_adjustment,
+                    self.constant_value_ + border_adjustment,
+                ],
+                dtype=torch.float32,
+            )
+            z_borders = (raw_borders - self.y_train_mean_) / self.y_train_std_
+            self.znorm_space_bardist_ = BarDistribution(z_borders)
+            self.raw_space_bardist_ = BarDistribution(raw_borders)
+            return
+
+        z_borders = torch.linspace(
             self.model.regression_bin_min,
             self.model.regression_bin_max,
             self.model.regression_bin_count + 1,
-            device=reg_logits.device,
-            dtype=reg_logits.dtype
+            dtype=torch.float32,
         )
-        bin_centres = 0.5 * (edges[:-1] + edges[1:])
-        weights = torch.softmax(reg_logits.float(), dim=-1)
-        return (weights * bin_centres).sum(dim=-1)
+        self.znorm_space_bardist_ = BarDistribution(z_borders)
+        self.raw_space_bardist_ = BarDistribution(
+            z_borders * self.y_train_std_ + self.y_train_mean_
+        )
 
     @torch.inference_mode()
-    def _predict(
+    def _predict_logits(
         self,
         X: np.ndarray,
         context_size: int | None = None,
         batch_size: int | None = None,
-        seed: int | None = None
-    ):
+        seed: int | None = None,
+    ) -> torch.Tensor:
         train_x, train_y, test_x = self._prepare_prediction(X, seed=seed)
         num_features = torch.tensor([train_x.shape[-1]], dtype=torch.long, device=train_x.device)
 
@@ -70,14 +141,14 @@ class TabDPTRegressor(TabDPTEstimator, RegressorMixin):
             if self.device == "cpu":
                 batch_size = 4096
             else:
-                batch_size = 128*1024
+                batch_size = 128 * 1024
 
         if seed is not None:
             feat_perm = generate_random_permutation(train_x.shape[1], seed)
             train_x = train_x[:, feat_perm]
             test_x = test_x[:, feat_perm]
 
-        train_y, mean_y, std_y = normalize_data(train_y, return_mean_std=True)
+        train_y, _, _ = normalize_data(train_y, return_mean_std=True)
 
         pred_list = []
         if self._uses_stacked_context(context_size):
@@ -93,10 +164,8 @@ class TabDPTRegressor(TabDPTEstimator, RegressorMixin):
                     y_src=y_ctx,
                     num_features=num_features,
                 )
-                y_hat = self._expectation_from_regression_logits(
-                    pred.squeeze(1)[:, self.max_num_classes:].float()
-                )
-                pred_list.append(y_hat * std_y + mean_y)
+                logits = pred.squeeze(1)[:, self.max_num_classes:].float()
+                pred_list.append(logits)
         else:
             for b in range(math.ceil(len(self.X_test) / batch_size)):
                 start = b * batch_size
@@ -119,36 +188,170 @@ class TabDPTRegressor(TabDPTEstimator, RegressorMixin):
                     y_src=y_nni,
                     num_features=num_features,
                 )
-                y_hat = self._expectation_from_regression_logits(pred.squeeze(0)[:, self.max_num_classes:].float())
-                pred_list.append(y_hat * std_y + mean_y)
+                logits = pred.squeeze(0)[:, self.max_num_classes:].float()
+                pred_list.append(logits)
 
-        return torch.cat(pred_list).detach().cpu().numpy()
+        return torch.cat(pred_list, dim=0)
 
-    def _ensemble_predict(
-            self,
-            X: np.ndarray,
-            n_ensembles: int = 8,
-            context_size: int | None = None,
-            batch_size: int | None = None,
-            seed: int | None = None,
-        ):
-        prediction_cumsum = 0
+    def _ensemble_logits(
+        self,
+        X: np.ndarray,
+        n_ensembles: int = 8,
+        context_size: int | None = None,
+        batch_size: int | None = None,
+        seed: int | None = None,
+    ) -> torch.Tensor:
+        accumulated = None
         for inner_seed in self._get_ensemble_iterator(n_ensembles, seed):
-            inner_seed = int(inner_seed)
-            prediction_cumsum += self._predict(X, context_size=context_size, batch_size=batch_size, seed=inner_seed)
+            logits = self._predict_logits(
+                X,
+                context_size=context_size,
+                batch_size=batch_size,
+                seed=int(inner_seed),
+            )
+            accumulated = logits if accumulated is None else accumulated + logits
+        return accumulated / n_ensembles
 
-        return prediction_cumsum / n_ensembles
+    def _handle_constant_target(
+        self,
+        n_samples: int,
+        output_type: OutputType,
+        quantiles: list[float],
+    ) -> RegressionResultType:
+        constant_prediction = np.full(n_samples, self.constant_value_)
+        if output_type in ("mean", "median", "mode"):
+            return constant_prediction
+        if output_type == "quantiles":
+            return [np.copy(constant_prediction) for _ in quantiles]
+
+        main_outputs = MainOutputDict(
+            mean=constant_prediction,
+            median=np.copy(constant_prediction),
+            mode=np.copy(constant_prediction),
+            quantiles=[np.copy(constant_prediction) for _ in quantiles],
+        )
+        if output_type == "full":
+            return FullOutputDict(
+                **main_outputs,
+                criterion=self.raw_space_bardist_,
+                logits=torch.zeros((n_samples, 1)),
+            )
+        return main_outputs
+
+    @overload
+    def predict(
+        self,
+        X: np.ndarray,
+        *,
+        output_type: Literal["mean", "median", "mode"] = "mean",
+        quantiles: list[float] | None = None,
+        n_ensembles: int = 8,
+        context_size: int | None = None,
+        batch_size: int | None = None,
+        seed: int | None = None,
+    ) -> np.ndarray: ...
+
+    @overload
+    def predict(
+        self,
+        X: np.ndarray,
+        *,
+        output_type: Literal["quantiles"],
+        quantiles: list[float] | None = None,
+        n_ensembles: int = 8,
+        context_size: int | None = None,
+        batch_size: int | None = None,
+        seed: int | None = None,
+    ) -> list[np.ndarray]: ...
+
+    @overload
+    def predict(
+        self,
+        X: np.ndarray,
+        *,
+        output_type: Literal["main"],
+        quantiles: list[float] | None = None,
+        n_ensembles: int = 8,
+        context_size: int | None = None,
+        batch_size: int | None = None,
+        seed: int | None = None,
+    ) -> MainOutputDict: ...
+
+    @overload
+    def predict(
+        self,
+        X: np.ndarray,
+        *,
+        output_type: Literal["full"],
+        quantiles: list[float] | None = None,
+        n_ensembles: int = 8,
+        context_size: int | None = None,
+        batch_size: int | None = None,
+        seed: int | None = None,
+    ) -> FullOutputDict: ...
 
     def predict(
-            self,
-            X: np.ndarray,
-            n_ensembles: int = 8,
-            context_size: int | None = None,
-            batch_size: int | None = None,
-            seed: int | None = None,
-        ):
-        if n_ensembles == 1:
-            return self._predict(X, context_size=context_size, batch_size=batch_size, seed=seed)
-        else:
-            return self._ensemble_predict(X, n_ensembles=n_ensembles, context_size=context_size,
-                batch_size=batch_size, seed=seed)
+        self,
+        X: np.ndarray,
+        *,
+        output_type: OutputType = "mean",
+        quantiles: list[float] | None = None,
+        n_ensembles: int = 8,
+        context_size: int | None = None,
+        batch_size: int | None = None,
+        seed: int | None = None,
+    ) -> RegressionResultType:
+        """Predict regression targets or distributional statistics.
+
+        By default returns the expected value (mean) of the model's binned predictive
+        distribution in raw target units. Use ``output_type`` to request medians,
+        modes, quantiles, or full distributional outputs.
+
+        The predictive distribution is a fixed-bin histogram over z-normalized targets
+        in ``[regression_bin_min, regression_bin_max]``, mapped to raw units via
+        fit-time ``y_train_mean_`` and ``y_train_std_``. All probability mass lies within
+        approximately ``[mean - 10*std, mean + 10*std]`` in raw space. Quantile bands
+        reflect the model's binned predictive distribution, not guaranteed coverage
+        intervals.
+        """
+        if quantiles is None:
+            quantiles = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+        elif not all((0 <= q <= 1) and isinstance(q, float) for q in quantiles):
+            raise ValueError("All quantiles must be between 0 and 1 and floats.")
+        if output_type not in ("mean", "median", "mode", "quantiles", "main", "full"):
+            raise ValueError(f"Invalid output type: {output_type}")
+
+        if self.is_constant_target_:
+            return self._handle_constant_target(X.shape[0], output_type, quantiles)
+
+        logits = self._ensemble_logits(
+            X,
+            n_ensembles=n_ensembles,
+            context_size=context_size,
+            batch_size=batch_size,
+            seed=seed,
+        )
+
+        logit_to_output = partial(
+            _logits_to_output,
+            logits=logits,
+            criterion=self.raw_space_bardist_,
+            quantiles=quantiles,
+        )
+
+        if output_type in ("full", "main"):
+            main_outputs = MainOutputDict(
+                mean=logit_to_output(output_type="mean"),
+                median=logit_to_output(output_type="median"),
+                mode=logit_to_output(output_type="mode"),
+                quantiles=logit_to_output(output_type="quantiles"),
+            )
+            if output_type == "full":
+                return FullOutputDict(
+                    **main_outputs,
+                    criterion=self.raw_space_bardist_,
+                    logits=logits,
+                )
+            return main_outputs
+
+        return logit_to_output(output_type=output_type)

@@ -1,4 +1,15 @@
 from .classifier import TabDPTClassifier
-from .regressor import TabDPTRegressor
+from .regressor import (
+    FullOutputDict,
+    MainOutputDict,
+    OutputType,
+    TabDPTRegressor,
+)
 
-__all__ = ["TabDPTClassifier", "TabDPTRegressor"]
+__all__ = [
+    "TabDPTClassifier",
+    "TabDPTRegressor",
+    "OutputType",
+    "MainOutputDict",
+    "FullOutputDict",
+]
