@@ -1,3 +1,5 @@
+import numpy as np
+import torch
 from sklearn.datasets import fetch_california_housing
 from sklearn.metrics import r2_score
 from sklearn.model_selection import train_test_split
@@ -26,28 +28,34 @@ print("mode R2:", r2_score(y_test, y_mode))
 
 # Arbitrary quantile levels (one array per quantile)
 quantile_preds = model.predict(
-    X_test,
-    output_type="quantiles",
-    quantiles=quantiles,
-    **predict_kwargs,
+    X_test, output_type="quantiles", quantiles=quantiles, **predict_kwargs,
 )
 print("quantile shapes:", [q.shape for q in quantile_preds])
 
 # All main statistics in one call
-main_out = model.predict(
-    X_test,
-    output_type="main",
-    quantiles=quantiles,
-    **predict_kwargs,
-)
+main_out = model.predict(X_test, output_type="main", quantiles=quantiles, **predict_kwargs)
 print("main keys:", list(main_out.keys()))
 
-# Full distributional output: main stats plus logits and BarDistribution
-full_out = model.predict(
-    X_test,
-    output_type="full",
-    quantiles=quantiles,
-    **predict_kwargs,
-)
+# Full distributional output: logits and BarDistribution over the target
+full_out = model.predict(X_test, output_type="full", quantiles=quantiles, **predict_kwargs)
 print("full keys:", list(full_out.keys()))
 print("logits shape:", tuple(full_out["logits"].shape))
+
+# Interval calibration and sharpness from the predictive histogram
+probas = torch.softmax(full_out["logits"], dim=-1).cpu().numpy()
+edges = full_out["criterion"].borders.cpu().numpy()
+mids = (edges[:-1] + edges[1:]) / 2
+cdf, y = np.cumsum(probas, axis=-1), np.asarray(y_test, float)
+
+for level in (90, 95):
+    alpha = 1 - level / 100
+    ql, qu = alpha / 2, 1 - alpha / 2
+    il = np.clip((cdf >= ql).argmax(1), 0, len(edges) - 1)
+    iu = np.clip((cdf >= qu).argmax(1) + 1, 0, len(edges) - 1)
+    lo, hi = edges[il], edges[iu]
+    print(f"coverage_{level}:", np.mean((y >= lo) & (y <= hi)))
+    iscore = (hi - lo) + (2 / alpha) * np.clip(lo - y, 0, None) + (2 / alpha) * np.clip(y - hi, 0, None)
+    print(f"interval_score_{level}:", iscore.mean())
+
+mu = (probas * mids).sum(1)
+print("sharpness:", np.sqrt(np.clip((probas * mids**2).sum(1) - mu**2, 0, None)).mean())
