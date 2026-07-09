@@ -201,16 +201,10 @@ class TabDPTRegressor(TabDPTEstimator, RegressorMixin):
         batch_size: int | None = None,
         seed: int | None = None,
     ) -> torch.Tensor:
-        accumulated = None
+        prediction_cumsum = 0
         for inner_seed in self._get_ensemble_iterator(n_ensembles, seed):
-            logits = self._predict_logits(
-                X,
-                context_size=context_size,
-                batch_size=batch_size,
-                seed=int(inner_seed),
-            )
-            accumulated = logits if accumulated is None else accumulated + logits
-        return accumulated / n_ensembles
+            prediction_cumsum += self._predict_logits(X, context_size=context_size, batch_size=batch_size, seed=int(inner_seed))
+        return prediction_cumsum / n_ensembles
 
     def _handle_constant_target(
         self,
