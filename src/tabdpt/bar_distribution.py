@@ -113,6 +113,7 @@ class BarDistribution(nn.Module):
             shape ``(*batch,)``.
         """
         density = logits.softmax(dim=-1) / self.bucket_widths
+        # argmax returns the lowest-index bin when several share the max density.
         mode_inds = density.argmax(dim=-1)
         bucket_means = self.borders[:-1] + self.bucket_widths / 2
         return bucket_means[mode_inds]
