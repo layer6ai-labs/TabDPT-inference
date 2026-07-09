@@ -11,6 +11,7 @@ from .estimator import TabDPTEstimator
 from .utils import convert_to_torch_tensor, generate_random_permutation, normalize_data, pad_x
 
 REGRESSION_CONSTANT_TARGET_BORDER_EPSILON = 1e-5
+_DEFAULT_QUANTILES = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
 
 OutputType = Literal["mean", "median", "mode", "quantiles", "full", "main"]
 
@@ -35,9 +36,12 @@ def _logits_to_output(
     output_type: str,
     logits: torch.Tensor,
     criterion: BarDistribution,
-    quantiles: list[float],
+    quantiles: list[float] | None = None,
 ) -> np.ndarray | list[np.ndarray]:
     if output_type == "quantiles":
+        quantiles = _DEFAULT_QUANTILES if quantiles is None else quantiles
+        if not all((0 <= q <= 1) and isinstance(q, float) for q in quantiles):
+            raise ValueError("All quantiles must be between 0 and 1 and floats.")
         return [criterion.icdf(logits, q).cpu().detach().numpy() for q in quantiles]
     if output_type == "mean":
         output = criterion.mean(logits)
@@ -210,11 +214,13 @@ class TabDPTRegressor(TabDPTEstimator, RegressorMixin):
         self,
         n_samples: int,
         output_type: OutputType,
-        quantiles: list[float],
+        quantiles: list[float] | None = None,
     ) -> RegressionResultType:
         constant_prediction = np.full(n_samples, self.constant_value_)
         if output_type in ("mean", "median", "mode"):
             return constant_prediction
+        if quantiles is None:
+            quantiles = _DEFAULT_QUANTILES
         if output_type == "quantiles":
             return [np.copy(constant_prediction) for _ in quantiles]
 
@@ -308,10 +314,6 @@ class TabDPTRegressor(TabDPTEstimator, RegressorMixin):
         reflect the model's binned predictive distribution, not guaranteed coverage
         intervals.
         """
-        if quantiles is None:
-            quantiles = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
-        elif not all((0 <= q <= 1) and isinstance(q, float) for q in quantiles):
-            raise ValueError("All quantiles must be between 0 and 1 and floats.")
         if output_type not in ("mean", "median", "mode", "quantiles", "main", "full"):
             raise ValueError(f"Invalid output type: {output_type}")
 
