@@ -12,6 +12,12 @@
 
 This repository provides lightweight interface code to generate predictions on new tabular datasets. Full training code is available [here](https://github.com/layer6ai-labs/TabDPT-training/).
 
+## TabDPT v1.2
+
+We're pleased to announce TabDPT v1.2, or TabDPT-Turbo! This release accelerates TabDPT fitting and inference by multiple orders of magnitude (~120x on average on TabArena) while improving predictive performance. In our experiments, TabDPT-Turbo is the fastest model overall among leading foundation models.
+
+More details and experimental results are provided in our [TabDPT-Turbo paper](https://openreview.net/forum?id=Y00pwFyrHR). As part of this release, we have made some API changes and changed some default hyperparameter values; see the [release notes](https://github.com/layer6ai-labs/TabDPT-inference/releases/tag/v1.2.0) for full details.
+
 ## Usage
 
 TabDPT is available on PyPI, and can be installed with:
