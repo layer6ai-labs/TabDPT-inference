@@ -5,11 +5,9 @@ import numpy as np
 import torch
 from sklearn.base import RegressorMixin
 
-from .bar_distribution import BarDistribution, distribution_mean
+from .bar_distribution import BarDistribution
 from .estimator import TabDPTEstimator
-from .utils import convert_to_torch_tensor, generate_random_permutation, normalize_data, pad_x
-
-REGRESSION_CONSTANT_TARGET_BORDER_EPSILON = 1e-5
+from .utils import generate_random_permutation, pad_x, normalize_data
 
 OutputType = Literal["mean", "full"]
 
@@ -50,53 +48,37 @@ class TabDPTRegressor(TabDPTEstimator, RegressorMixin):
             verbose=verbose,
         )
 
-    def fit(self, X: np.ndarray, y: np.ndarray):
-        super().fit(X, y)
-        self._initialize_regression_state()
-        return self
-
-    def _initialize_regression_state(self):
-        train_y = convert_to_torch_tensor(self.y_train).float()
-        _, mean_y, std_y = normalize_data(train_y, return_mean_std=True)
-        self.y_train_mean_ = float(mean_y.item())
-        self.y_train_std_ = float(std_y.item())
-
-        self.is_constant_target_ = len(np.unique(self.y_train)) == 1
-        self.constant_value_ = float(self.y_train[0]) if self.is_constant_target_ else None
-
-        if self.is_constant_target_:
-            border_adjustment = max(
-                abs(self.constant_value_ * REGRESSION_CONSTANT_TARGET_BORDER_EPSILON),
-                REGRESSION_CONSTANT_TARGET_BORDER_EPSILON,
-            )
-            raw_borders = torch.tensor(
-                [
-                    self.constant_value_ - border_adjustment,
-                    self.constant_value_ + border_adjustment,
-                ],
-                dtype=torch.float32,
-            )
-            self.raw_space_bardist_ = BarDistribution(raw_borders)
-            return
-
-        z_borders = torch.linspace(
+    def _expectation_from_regression_logits(self, reg_logits: torch.Tensor) -> torch.Tensor:
+        edges = torch.linspace(
             self.model.regression_bin_min,
             self.model.regression_bin_max,
             self.model.regression_bin_count + 1,
-            dtype=torch.float32,
+            device=reg_logits.device,
+            dtype=reg_logits.dtype
         )
-        self.raw_space_bardist_ = BarDistribution(
-            z_borders * self.y_train_std_ + self.y_train_mean_
+        bin_centres = 0.5 * (edges[:-1] + edges[1:])
+        weights = torch.softmax(reg_logits.float(), dim=-1)
+        return (weights * bin_centres).sum(dim=-1)
+
+    def _bardist_from_norm_stats(self, mean_y: torch.Tensor, std_y: torch.Tensor) -> BarDistribution:
+        borders = torch.linspace(
+            self.model.regression_bin_min,
+            self.model.regression_bin_max,
+            self.model.regression_bin_count + 1,
+            device=mean_y.device,
+            dtype=mean_y.dtype,
         )
+        return BarDistribution(borders * std_y + mean_y)
 
     @torch.inference_mode()
-    def _predict_logits(
+    def _predict(
         self,
         X: np.ndarray,
         context_size: int | None = None,
         batch_size: int | None = None,
         seed: int | None = None,
-    ) -> torch.Tensor:
+        return_logits: bool = False,
+    ):
         train_x, train_y, test_x = self._prepare_prediction(X, seed=seed)
         num_features = torch.tensor([train_x.shape[-1]], dtype=torch.long, device=train_x.device)
 
@@ -107,14 +89,14 @@ class TabDPTRegressor(TabDPTEstimator, RegressorMixin):
             if self.device == "cpu":
                 batch_size = 4096
             else:
-                batch_size = 128 * 1024
+                batch_size = 128*1024
 
         if seed is not None:
             feat_perm = generate_random_permutation(train_x.shape[1], seed)
             train_x = train_x[:, feat_perm]
             test_x = test_x[:, feat_perm]
 
-        train_y, _, _ = normalize_data(train_y, return_mean_std=True)
+        train_y, mean_y, std_y = normalize_data(train_y, return_mean_std=True)
 
         pred_list = []
         if self._uses_stacked_context(context_size):
@@ -131,7 +113,11 @@ class TabDPTRegressor(TabDPTEstimator, RegressorMixin):
                     num_features=num_features,
                 )
                 logits = pred.squeeze(1)[:, self.max_num_classes:].float()
-                pred_list.append(logits)
+                if return_logits:
+                    pred_list.append(logits)
+                else:
+                    y_hat = self._expectation_from_regression_logits(logits)
+                    pred_list.append(y_hat * std_y + mean_y)
         else:
             for b in range(math.ceil(len(self.X_test) / batch_size)):
                 start = b * batch_size
@@ -155,97 +141,108 @@ class TabDPTRegressor(TabDPTEstimator, RegressorMixin):
                     num_features=num_features,
                 )
                 logits = pred.squeeze(0)[:, self.max_num_classes:].float()
-                pred_list.append(logits)
+                if return_logits:
+                    pred_list.append(logits)
+                else:
+                    y_hat = self._expectation_from_regression_logits(logits)
+                    pred_list.append(y_hat * std_y + mean_y)
 
-        return torch.cat(pred_list, dim=0)
+        preds = torch.cat(pred_list, dim=0)
+        if return_logits:
+            return preds, mean_y, std_y
+        return preds.detach().cpu().numpy()
 
-    def _ensemble_logits(
-        self,
-        X: np.ndarray,
-        n_ensembles: int = 8,
-        context_size: int | None = None,
-        batch_size: int | None = None,
-        seed: int | None = None,
-    ) -> torch.Tensor:
+    def _ensemble_predict(
+            self,
+            X: np.ndarray,
+            n_ensembles: int = 8,
+            context_size: int | None = None,
+            batch_size: int | None = None,
+            seed: int | None = None,
+            return_logits: bool = False,
+        ):
         prediction_cumsum = 0
+        mean_y = std_y = None
         for inner_seed in self._get_ensemble_iterator(n_ensembles, seed):
-            prediction_cumsum += self._predict_logits(
-                X, context_size=context_size, batch_size=batch_size, seed=int(inner_seed)
-            )
+            inner_seed = int(inner_seed)
+            if return_logits:
+                logits, mean_y, std_y = self._predict(
+                    X, context_size=context_size, batch_size=batch_size, seed=inner_seed, return_logits=True
+                )
+                prediction_cumsum += logits
+            else:
+                prediction_cumsum += self._predict(
+                    X, context_size=context_size, batch_size=batch_size, seed=inner_seed
+                )
+
+        if return_logits:
+            return prediction_cumsum / n_ensembles, mean_y, std_y
         return prediction_cumsum / n_ensembles
 
-    def _handle_constant_target(self, n_samples: int, output_type: OutputType) -> np.ndarray | FullPrediction:
-        constant_prediction = np.full(n_samples, self.constant_value_)
-        if output_type == "mean":
-            return constant_prediction
-        return FullPrediction(
-            logits=torch.zeros((n_samples, 1)),
-            criterion=self.raw_space_bardist_,
-        )
+    @overload
+    def predict(
+            self,
+            X: np.ndarray,
+            n_ensembles: int = 8,
+            context_size: int | None = None,
+            batch_size: int | None = None,
+            seed: int | None = None,
+            *,
+            output_type: Literal["mean"] = "mean",
+        ) -> np.ndarray: ...
 
     @overload
     def predict(
-        self,
-        X: np.ndarray,
-        *,
-        output_type: Literal["mean"] = "mean",
-        n_ensembles: int = 8,
-        context_size: int | None = None,
-        batch_size: int | None = None,
-        seed: int | None = None,
-    ) -> np.ndarray: ...
-
-    @overload
-    def predict(
-        self,
-        X: np.ndarray,
-        *,
-        output_type: Literal["full"],
-        n_ensembles: int = 8,
-        context_size: int | None = None,
-        batch_size: int | None = None,
-        seed: int | None = None,
-    ) -> FullPrediction: ...
+            self,
+            X: np.ndarray,
+            n_ensembles: int = 8,
+            context_size: int | None = None,
+            batch_size: int | None = None,
+            seed: int | None = None,
+            *,
+            output_type: Literal["full"],
+        ) -> FullPrediction: ...
 
     def predict(
-        self,
-        X: np.ndarray,
-        *,
-        output_type: OutputType = "mean",
-        n_ensembles: int = 8,
-        context_size: int | None = None,
-        batch_size: int | None = None,
-        seed: int | None = None,
-    ) -> np.ndarray | FullPrediction:
-        """Predict regression targets or the full predictive distribution.
+            self,
+            X: np.ndarray,
+            n_ensembles: int = 8,
+            context_size: int | None = None,
+            batch_size: int | None = None,
+            seed: int | None = None,
+            *,
+            output_type: OutputType = "mean",
+        ) -> np.ndarray | FullPrediction:
+        """Predict regression targets, or the full predictive distribution.
 
-        By default returns the expected value (mean) of the model's binned predictive
-        distribution in raw target units. Use ``output_type="full"`` to obtain the
-        ensembled logits and the ``BarDistribution`` criterion in raw target space;
-        further statistics (median, mode, quantiles, samples) can be derived via
-        ``BarDistribution`` methods or the ``distribution_*`` helpers.
-
-        The predictive distribution is a fixed-bin histogram over z-normalized targets
-        in ``[regression_bin_min, regression_bin_max]``, mapped to raw units via
-        fit-time ``y_train_mean_`` and ``y_train_std_``. All probability mass lies within
-        approximately ``[mean - 10*std, mean + 10*std]`` in raw space.
+        Default ``output_type="mean"`` matches the original point-prediction path.
+        ``output_type="full"`` returns ensembled logits and a ``BarDistribution``
+        criterion in raw target space (for median/mode/quantiles/samples).
         """
         if output_type not in ("mean", "full"):
             raise ValueError(f"Invalid output type: {output_type}")
 
-        if self.is_constant_target_:
-            return self._handle_constant_target(X.shape[0], output_type)
-
-        logits = self._ensemble_logits(
-            X,
-            n_ensembles=n_ensembles,
-            context_size=context_size,
-            batch_size=batch_size,
-            seed=seed,
-        )
-        criterion = self.raw_space_bardist_
-
         if output_type == "full":
-            return FullPrediction(logits=logits, criterion=criterion)
+            if n_ensembles == 1:
+                logits, mean_y, std_y = self._predict(
+                    X, context_size=context_size, batch_size=batch_size, seed=seed, return_logits=True
+                )
+            else:
+                logits, mean_y, std_y = self._ensemble_predict(
+                    X,
+                    n_ensembles=n_ensembles,
+                    context_size=context_size,
+                    batch_size=batch_size,
+                    seed=seed,
+                    return_logits=True,
+                )
+            return FullPrediction(
+                logits=logits,
+                criterion=self._bardist_from_norm_stats(mean_y, std_y),
+            )
 
-        return distribution_mean(logits, criterion)
+        if n_ensembles == 1:
+            return self._predict(X, context_size=context_size, batch_size=batch_size, seed=seed)
+        else:
+            return self._ensemble_predict(X, n_ensembles=n_ensembles, context_size=context_size,
+                batch_size=batch_size, seed=seed)
