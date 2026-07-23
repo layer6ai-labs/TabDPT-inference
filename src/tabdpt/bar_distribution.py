@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import numpy as np
 import torch
 from torch import nn
+
+_DEFAULT_QUANTILES = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
 
 
 class BarDistribution(nn.Module):
@@ -87,25 +90,36 @@ class BarDistribution(nn.Module):
         """
         probs = logits.softmax(dim=-1)
         cumprobs = torch.cumsum(probs, dim=-1)
-        idx = (
-            torch.searchsorted(
-                cumprobs,
-                left_prob * torch.ones(*cumprobs.shape[:-1], 1, device=logits.device),
+
+        # Normalize left_prob to shape (*leading,) then (*leading, 1) for searchsorted.
+        # Avoid `tensor(N,) * ones(N, 1)`, which broadcasts to (N, N) in PyTorch.
+        if not torch.is_tensor(left_prob):
+            left_prob = torch.full(
+                cumprobs.shape[:-1],
+                float(left_prob),
+                device=logits.device,
+                dtype=cumprobs.dtype,
             )
+        else:
+            left_prob = left_prob.to(device=logits.device, dtype=cumprobs.dtype)
+            left_prob = torch.broadcast_to(left_prob, cumprobs.shape[:-1])
+
+        idx = (
+            torch.searchsorted(cumprobs, left_prob.unsqueeze(-1))
             .squeeze(-1)
             .clamp(0, cumprobs.shape[-1] - 1)
         )
         cumprobs = torch.cat(
-            [torch.zeros(*cumprobs.shape[:-1], 1, device=logits.device), cumprobs],
+            [torch.zeros(*cumprobs.shape[:-1], 1, device=logits.device, dtype=cumprobs.dtype), cumprobs],
             dim=-1,
         )
 
-        rest_prob = left_prob - cumprobs.gather(-1, idx[..., None]).squeeze(-1)
+        rest_prob = left_prob - cumprobs.gather(-1, idx.unsqueeze(-1)).squeeze(-1)
         left_border = self.borders[idx]
         right_border = self.borders[idx + 1]
         return left_border + (right_border - left_border) * rest_prob / probs.gather(
             -1,
-            idx[..., None],
+            idx.unsqueeze(-1),
         ).squeeze(-1)
 
     def mode(self, logits: torch.Tensor) -> torch.Tensor:
@@ -147,3 +161,44 @@ class BarDistribution(nn.Module):
         # Only the last axis holds per-bin logits.
         u = torch.rand(*logits.shape[:-1], device=logits.device)
         return self.icdf(logits, u)
+
+
+def _to_numpy(values: torch.Tensor) -> np.ndarray:
+    return values.detach().cpu().numpy()
+
+
+def distribution_mean(logits: torch.Tensor, criterion: BarDistribution) -> np.ndarray:
+    """Expected value of each predictive distribution, as a NumPy array."""
+    return _to_numpy(criterion.mean(logits))
+
+
+def distribution_median(logits: torch.Tensor, criterion: BarDistribution) -> np.ndarray:
+    """Median (50th percentile) of each predictive distribution, as a NumPy array."""
+    return _to_numpy(criterion.median(logits))
+
+
+def distribution_mode(logits: torch.Tensor, criterion: BarDistribution) -> np.ndarray:
+    """Mode of each predictive distribution, as a NumPy array."""
+    return _to_numpy(criterion.mode(logits))
+
+
+def distribution_quantiles(
+    logits: torch.Tensor,
+    criterion: BarDistribution,
+    quantiles: list[float] | None = None,
+) -> list[np.ndarray]:
+    """Quantile values for each predictive distribution.
+
+    Args:
+        logits: Unnormalized log-probabilities of shape ``(*leading, num_bars)``.
+        criterion: Bar distribution whose borders define the support.
+        quantiles: Probability levels in ``[0, 1]``. Defaults to
+            ``[0.1, 0.2, ..., 0.9]``.
+
+    Returns:
+        One NumPy array per quantile level, each of shape ``(*leading,)``.
+    """
+    quantiles = _DEFAULT_QUANTILES if quantiles is None else quantiles
+    if not all((0 <= q <= 1) and isinstance(q, float) for q in quantiles):
+        raise ValueError("All quantiles must be between 0 and 1 and floats.")
+    return [_to_numpy(criterion.icdf(logits, q)) for q in quantiles]

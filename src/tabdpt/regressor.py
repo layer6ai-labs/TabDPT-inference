@@ -1,57 +1,22 @@
 import math
-from functools import partial
 from typing import Literal, TypedDict, overload
 
 import numpy as np
 import torch
 from sklearn.base import RegressorMixin
 
-from .bar_distribution import BarDistribution
+from .bar_distribution import BarDistribution, distribution_mean
 from .estimator import TabDPTEstimator
 from .utils import convert_to_torch_tensor, generate_random_permutation, normalize_data, pad_x
 
 REGRESSION_CONSTANT_TARGET_BORDER_EPSILON = 1e-5
-_DEFAULT_QUANTILES = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
 
-OutputType = Literal["mean", "median", "mode", "quantiles", "full", "main"]
-
-
-class MainOutputDict(TypedDict):
-    mean: np.ndarray
-    median: np.ndarray
-    mode: np.ndarray
-    quantiles: list[np.ndarray]
+OutputType = Literal["mean", "full"]
 
 
-class FullOutputDict(MainOutputDict):
-    criterion: BarDistribution
+class FullPrediction(TypedDict):
     logits: torch.Tensor
-
-
-RegressionResultType = np.ndarray | list[np.ndarray] | MainOutputDict | FullOutputDict
-
-
-def _logits_to_output(
-    *,
-    output_type: str,
-    logits: torch.Tensor,
-    criterion: BarDistribution,
-    quantiles: list[float] | None = None,
-) -> np.ndarray | list[np.ndarray]:
-    if output_type == "quantiles":
-        quantiles = _DEFAULT_QUANTILES if quantiles is None else quantiles
-        if not all((0 <= q <= 1) and isinstance(q, float) for q in quantiles):
-            raise ValueError("All quantiles must be between 0 and 1 and floats.")
-        return [criterion.icdf(logits, q).cpu().detach().numpy() for q in quantiles]
-    if output_type == "mean":
-        output = criterion.mean(logits)
-    elif output_type == "median":
-        output = criterion.median(logits)
-    elif output_type == "mode":
-        output = criterion.mode(logits)
-    else:
-        raise ValueError(f"Invalid output type: {output_type}")
-    return output.cpu().detach().numpy()
+    criterion: BarDistribution
 
 
 class TabDPTRegressor(TabDPTEstimator, RegressorMixin):
@@ -111,8 +76,6 @@ class TabDPTRegressor(TabDPTEstimator, RegressorMixin):
                 ],
                 dtype=torch.float32,
             )
-            z_borders = (raw_borders - self.y_train_mean_) / self.y_train_std_
-            self.znorm_space_bardist_ = BarDistribution(z_borders)
             self.raw_space_bardist_ = BarDistribution(raw_borders)
             return
 
@@ -122,7 +85,6 @@ class TabDPTRegressor(TabDPTEstimator, RegressorMixin):
             self.model.regression_bin_count + 1,
             dtype=torch.float32,
         )
-        self.znorm_space_bardist_ = BarDistribution(z_borders)
         self.raw_space_bardist_ = BarDistribution(
             z_borders * self.y_train_std_ + self.y_train_mean_
         )
@@ -207,44 +169,26 @@ class TabDPTRegressor(TabDPTEstimator, RegressorMixin):
     ) -> torch.Tensor:
         prediction_cumsum = 0
         for inner_seed in self._get_ensemble_iterator(n_ensembles, seed):
-            prediction_cumsum += self._predict_logits(X, context_size=context_size, batch_size=batch_size, seed=int(inner_seed))
+            prediction_cumsum += self._predict_logits(
+                X, context_size=context_size, batch_size=batch_size, seed=int(inner_seed)
+            )
         return prediction_cumsum / n_ensembles
 
-    def _handle_constant_target(
-        self,
-        n_samples: int,
-        output_type: OutputType,
-        quantiles: list[float] | None = None,
-    ) -> RegressionResultType:
+    def _handle_constant_target(self, n_samples: int, output_type: OutputType) -> np.ndarray | FullPrediction:
         constant_prediction = np.full(n_samples, self.constant_value_)
-        if output_type in ("mean", "median", "mode"):
+        if output_type == "mean":
             return constant_prediction
-        if quantiles is None:
-            quantiles = _DEFAULT_QUANTILES
-        if output_type == "quantiles":
-            return [np.copy(constant_prediction) for _ in quantiles]
-
-        main_outputs = MainOutputDict(
-            mean=constant_prediction,
-            median=np.copy(constant_prediction),
-            mode=np.copy(constant_prediction),
-            quantiles=[np.copy(constant_prediction) for _ in quantiles],
+        return FullPrediction(
+            logits=torch.zeros((n_samples, 1)),
+            criterion=self.raw_space_bardist_,
         )
-        if output_type == "full":
-            return FullOutputDict(
-                **main_outputs,
-                criterion=self.raw_space_bardist_,
-                logits=torch.zeros((n_samples, 1)),
-            )
-        return main_outputs
 
     @overload
     def predict(
         self,
         X: np.ndarray,
         *,
-        output_type: Literal["mean", "median", "mode"] = "mean",
-        quantiles: list[float] | None = None,
+        output_type: Literal["mean"] = "mean",
         n_ensembles: int = 8,
         context_size: int | None = None,
         batch_size: int | None = None,
@@ -256,69 +200,41 @@ class TabDPTRegressor(TabDPTEstimator, RegressorMixin):
         self,
         X: np.ndarray,
         *,
-        output_type: Literal["quantiles"],
-        quantiles: list[float] | None = None,
-        n_ensembles: int = 8,
-        context_size: int | None = None,
-        batch_size: int | None = None,
-        seed: int | None = None,
-    ) -> list[np.ndarray]: ...
-
-    @overload
-    def predict(
-        self,
-        X: np.ndarray,
-        *,
-        output_type: Literal["main"],
-        quantiles: list[float] | None = None,
-        n_ensembles: int = 8,
-        context_size: int | None = None,
-        batch_size: int | None = None,
-        seed: int | None = None,
-    ) -> MainOutputDict: ...
-
-    @overload
-    def predict(
-        self,
-        X: np.ndarray,
-        *,
         output_type: Literal["full"],
-        quantiles: list[float] | None = None,
         n_ensembles: int = 8,
         context_size: int | None = None,
         batch_size: int | None = None,
         seed: int | None = None,
-    ) -> FullOutputDict: ...
+    ) -> FullPrediction: ...
 
     def predict(
         self,
         X: np.ndarray,
         *,
         output_type: OutputType = "mean",
-        quantiles: list[float] | None = None,
         n_ensembles: int = 8,
         context_size: int | None = None,
         batch_size: int | None = None,
         seed: int | None = None,
-    ) -> RegressionResultType:
-        """Predict regression targets or distributional statistics.
+    ) -> np.ndarray | FullPrediction:
+        """Predict regression targets or the full predictive distribution.
 
         By default returns the expected value (mean) of the model's binned predictive
-        distribution in raw target units. Use ``output_type`` to request medians,
-        modes, quantiles, or full distributional outputs.
+        distribution in raw target units. Use ``output_type="full"`` to obtain the
+        ensembled logits and the ``BarDistribution`` criterion in raw target space;
+        further statistics (median, mode, quantiles, samples) can be derived via
+        ``BarDistribution`` methods or the ``distribution_*`` helpers.
 
         The predictive distribution is a fixed-bin histogram over z-normalized targets
         in ``[regression_bin_min, regression_bin_max]``, mapped to raw units via
         fit-time ``y_train_mean_`` and ``y_train_std_``. All probability mass lies within
-        approximately ``[mean - 10*std, mean + 10*std]`` in raw space. Quantile bands
-        reflect the model's binned predictive distribution, not guaranteed coverage
-        intervals.
+        approximately ``[mean - 10*std, mean + 10*std]`` in raw space.
         """
-        if output_type not in ("mean", "median", "mode", "quantiles", "main", "full"):
+        if output_type not in ("mean", "full"):
             raise ValueError(f"Invalid output type: {output_type}")
 
         if self.is_constant_target_:
-            return self._handle_constant_target(X.shape[0], output_type, quantiles)
+            return self._handle_constant_target(X.shape[0], output_type)
 
         logits = self._ensemble_logits(
             X,
@@ -327,27 +243,9 @@ class TabDPTRegressor(TabDPTEstimator, RegressorMixin):
             batch_size=batch_size,
             seed=seed,
         )
+        criterion = self.raw_space_bardist_
 
-        logit_to_output = partial(
-            _logits_to_output,
-            logits=logits,
-            criterion=self.raw_space_bardist_,
-            quantiles=quantiles,
-        )
+        if output_type == "full":
+            return FullPrediction(logits=logits, criterion=criterion)
 
-        if output_type in ("full", "main"):
-            main_outputs = MainOutputDict(
-                mean=logit_to_output(output_type="mean"),
-                median=logit_to_output(output_type="median"),
-                mode=logit_to_output(output_type="mode"),
-                quantiles=logit_to_output(output_type="quantiles"),
-            )
-            if output_type == "full":
-                return FullOutputDict(
-                    **main_outputs,
-                    criterion=self.raw_space_bardist_,
-                    logits=logits,
-                )
-            return main_outputs
-
-        return logit_to_output(output_type=output_type)
+        return distribution_mean(logits, criterion)
