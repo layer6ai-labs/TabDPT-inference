@@ -48,6 +48,7 @@ class TabDPTEstimator(BaseEstimator):
     ):
         """
         Initializes the TabDPT Estimator
+
         Args:
             mode: Defines what mode the estimator is
                 "cls" is classification, "reg" is regression
@@ -84,7 +85,6 @@ class TabDPTEstimator(BaseEstimator):
             model_weight_path: path on file system specifying the model weights
                 If no path is specified, then the model weights are downloaded from HuggingFace
             verbose: Specifies whether to add tqdm looping to ensemble estimator
-
         """
         self.mode = mode
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")

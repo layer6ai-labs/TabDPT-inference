@@ -84,10 +84,12 @@ class TabDPTModel(nn.Module):
         num_features: torch.Tensor,
     ) -> torch.Tensor:
         """Forward pass of the TabDPTModel.
+
         Args:
-            x_src (torch.Tensor): Input features of shape (B, T, F).
-            y_src (torch.Tensor): Target values of shape (B, T).
-            return_log_act_norms (bool): Whether to return activation norms for logging.
+            x_src: Input features of shape (B, T, F).
+            y_src: Target values of shape (B, T).
+            num_features: Number of features
+
         Returns:
             torch.Tensor: Predicted values of shape (T, B, n_out + regression_bin_count).
         """
@@ -187,14 +189,15 @@ class TransformerEncoderLayer(nn.Module):
         max_len: int,
         y_encoder_dim: int,
     ) -> None:
-        """
+        """Custom transformer encoder layer
+
         Args:
-            embed_dim (int): Dimension of the embedding.
-            num_heads (int): Number of attention heads.
-            ff_dim (int): Dimension of the feed-forward network.
-            base_len (int): Base length for attention scaling.
-            max_len (int): Maximum length for attention scaling. If equal to base_len, attention scaling is disabled.
-            y_encoder_dim (int): Dimension of per-layer y embedding; v_proj input is embed_dim + y_encoder_dim.
+            embed_dim: Dimension of the embedding.
+            num_heads: Number of attention heads.
+            ff_dim: Dimension of the feed-forward network.
+            base_len: Base length for attention scaling.
+            max_len: Maximum length for attention scaling. If equal to base_len, attention scaling is disabled.
+            y_encoder_dim: Dimension of per-layer y embedding; v_proj input is embed_dim + y_encoder_dim.
         """
         super().__init__()
         self.embed_dim = embed_dim
@@ -243,9 +246,10 @@ class TransformerEncoderLayer(nn.Module):
         """Compute the residual for this layer.
 
         Args:
-            x (torch.tensor): Input tensor of shape (L, B, D).
-            y (torch.tensor): Target embedding for the context region of shape (eval_pos, B, y_encoder_dim).
-            eval_pos (int): Number of context positions (length of y and K/V).
+            x: Input tensor of shape (L, B, D).
+            y: Target embedding for the context region of shape (eval_pos, B, y_encoder_dim).
+            eval_pos: Number of context positions (length of y and K/V).
+
         Returns:
             torch.tensor: Residual tensor to be added to input (same shape as input).
         """
