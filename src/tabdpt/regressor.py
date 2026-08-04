@@ -150,14 +150,14 @@ class TabDPTRegressor(TabDPTEstimator, RegressorMixin):
         """Predict regression output, returning a point prediction
 
         Args:
-            X: Input inference instances, n_instances x n_features.
+            X: Input inference instances, `n_instances` x `n_features`.
             n_ensembles: Number of TabDPT runs to ensemble together.
             context_size: Maximum number of train points in the context. Uses all points if `None`, which can lead to
                 GPU OOMs. Otherwise reduces context size based on `context_reduction` setting.
             batch_size: Number of inference points to use in each batch. If `None`, defaults to 4096 on CPU and 128k on
                 GPU. Can be increased for faster inference, or decreased to prevent OOMs.
-            seed: Seed used for permuting feature order during ensembling. If n_ensembles is 1, then feature permutation
-                will only be done if this is set to a non-`None` value.
+            seed: Seed used for permuting feature order during ensembling. If `n_ensembles` is 1, then feature
+                permutation will only be done if this is set to a non-`None` value.
 
         Returns:
             A point prediction vector of length n_instances.
