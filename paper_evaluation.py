@@ -18,6 +18,16 @@ from tabdpt_datasets.openml import OpenMLDataset, TabZillaDataset
 CLS_DATASET_PATH = "tabdpt_datasets/data_splits/cls_datasets.csv"
 REG_DATASET_PATH = "tabdpt_datasets/data_splits/reg_datasets.csv"
 
+# fmt: off
+TABARENA_IDS = [
+    363621, 363629, 363614, 363698, 363626, 363685, 363625, 363696, 363675, 363707, 363671, 363612,
+    363615, 363711, 363682, 363684, 363674, 363700, 363702, 363620, 363677, 363704, 363623, 363697,
+    363694, 363708, 363706, 363689, 363624, 363619, 363676, 363712, 363632, 363691, 363681, 363686,
+    363679, 363678, 363705, 363627, 363613, 363618, 363672, 363693, 363683, 363631, 363630, 363616,
+    363699, 363628, 363673
+]
+# fmt: on
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run TabDPT evaluation")
@@ -30,6 +40,14 @@ if __name__ == "__main__":
     parser.add_argument("--use-cpu", action="store_true", help="If true, use CPU for evalutation")
     parser.add_argument("--gpu-to-use", type=int, default=0, help="Which GPU to use")
     parser.add_argument("--results-folder", type=str, default="eval_output", help="Parent results directory")
+    parser.add_argument(
+        "--suites", nargs="+", default=["cc18", "ctr23", "tabarena"], choices=["cc18", "ctr23", "tabarena"],
+        help="Which suites to evaluate. Use to resume only the missing suites without redoing others.",
+    )
+    parser.add_argument(
+        "--model-weight-path", type=str, default=None,
+        help="Path to model weights. Defaults to the estimator's default (v1.2).",
+    )
     args = parser.parse_args()
 
     if args.use_cpu:
@@ -50,6 +68,7 @@ if __name__ == "__main__":
     did_tid_mapping.update(dict(zip(ctr23_dids, ctr23_test_df["tid"])))
 
     results = {
+        "suite": [],
         "name": [],
         "acc": [],
         "f1": [],
@@ -61,23 +80,45 @@ if __name__ == "__main__":
         "train_time": [],
         "inference_time": [],
     }
-    model_cls = TabDPTClassifier(device=device)
-    model_reg = TabDPTRegressor(device=device)
+    model_cls = TabDPTClassifier(device=device, model_weight_path=args.model_weight_path)
+    model_reg = TabDPTRegressor(device=device, model_weight_path=args.model_weight_path)
 
-    pbar = tqdm(
-        itertools.chain(itertools.product(["cls"], cc18_dids), itertools.product(["reg"], ctr23_dids)),
-        total=(len(cc18_dids) + len(ctr23_dids)),
+    suites = set(args.suites)
+    tasks = []
+    if "cc18" in suites:
+        tasks += list(zip(itertools.repeat("cc18"), cc18_dids))
+    if "ctr23" in suites:
+        tasks += list(zip(itertools.repeat("ctr23"), ctr23_dids))
+    if "tabarena" in suites:
+        tasks += list(zip(itertools.repeat("tabarena"), TABARENA_IDS))
+
+    print(f"""Total of {len(tasks)} tasks are loaded from {', '.join(suites)}.""")
+
+    os.makedirs(args.results_folder, exist_ok=True)
+    datetime_string = datetime.now().isoformat(timespec="seconds").replace("T", "_").replace(":", "-")
+    csv_name = (
+        f"results_{datetime_string}_context={args.context_size}_"
+        f"fold={args.fold}_N={args.n_ensembles}_seed={args.seed}.csv"
     )
-    for mode, did in pbar:
-        if mode == "cls":
-            tid = did_tid_mapping[did]
-            dataset = TabZillaDataset(task_id=tid, fold=args.fold)
+    csv_path = os.path.join(args.results_folder, csv_name)
+
+    pbar = tqdm(tasks, total=len(tasks))
+    for suite, ident in pbar:
+        if suite == "cc18":
+            dataset = TabZillaDataset(task_id=did_tid_mapping[ident], fold=args.fold)
             dataset.prepare_data(".cache")
             dataset_name = dataset.name
-        else:
-            dataset = OpenMLDataset("openml_dataset", task_id=int(did_tid_mapping[did]), fold=args.fold)
+            mode = "cls"
+        elif suite == "ctr23":
+            dataset = OpenMLDataset("openml_dataset", task_id=int(did_tid_mapping[ident]), fold=args.fold)
             dataset.prepare_data(".cache")
             dataset_name = dataset.openml_dataset.name
+            mode = "reg"
+        else:
+            dataset = OpenMLDataset("openml_dataset", task_id=int(ident), fold=args.fold)
+            dataset.prepare_data(".cache")
+            dataset_name = dataset.openml_dataset.name
+            mode = "cls" if dataset.metadata["target_type"] == "classification" else "reg"
 
         pbar.set_description(f"Running {dataset_name}")
 
@@ -142,6 +183,7 @@ if __name__ == "__main__":
             r2 = r2_score(y_test, pred_val)
             f1, acc, auc, ce_loss = None, None, None, None
 
+        results["suite"].append(suite)
         results["name"].append(dataset_name)
         results["acc"].append(acc)
         results["f1"].append(f1)
@@ -153,6 +195,8 @@ if __name__ == "__main__":
         results["train_time"].append(train_time)
         results["inference_time"].append(inference_time)
 
+        pd.DataFrame(results).to_csv(csv_path, index=False)
+
         print(f"\nDataset: {dataset_name}")
         print(f"X_train shape: {X_train.shape}, X_test shape: {X_test.shape}")
         print(f"train_time: {train_time:.4f}s, inference_time: {inference_time:.4f}s")
@@ -163,23 +207,42 @@ if __name__ == "__main__":
             print(f"mse {mse}, corr {corr}, r2 {r2}")
 
     df = pd.DataFrame(results)
-
-    datetime_string = datetime.now().isoformat(timespec="seconds")
-    datetime_string = datetime_string.replace("T", "_").replace(":", "-")
-    csv_name = (
-        f"results_{datetime_string}_context={args.context_size}_"
-        f"fold={args.fold}_N={args.n_ensembles}_seed={args.seed}.csv"
-    )
-
-    os.makedirs(args.results_folder, exist_ok=True)
-    df.to_csv(os.path.join(args.results_folder, csv_name), index=False)
+    df.to_csv(csv_path, index=False)
 
     def robust_iqm(x):
         try:
+            x = np.asarray(x, dtype=float)
             x = x[~np.isnan(x)]
-            return metrics.aggregate_iqm(x)
+            return metrics.aggregate_iqm(x) if len(x) else None
         except TypeError:
             return None
 
-    print(f"IQM for Fold {args.fold}, N={args.n_ensembles}, T={args.temperature}:")
-    print(df[["acc", "auc", "corr", "r2"]].apply(lambda x: robust_iqm(x)))
+    weights_used = args.model_weight_path or "<estimator default (v1.2)>"
+    lines = [
+        f"TabDPT v1.2 paper evaluation",
+        f"weights: {weights_used}",
+        f"fold={args.fold}  N={args.n_ensembles}  T={args.temperature}  context={args.context_size}  seed={args.seed}",
+        f"csv: {csv_name}",
+        "",
+    ]
+    for suite in ["cc18", "ctr23", "tabarena"]:
+        sub = df[df["suite"] == suite]
+        if sub.empty:
+            continue
+        lines.append(f"[{suite}] datasets={len(sub)}  IQM:")
+        for metric in ["acc", "auc", "corr", "r2"]:
+            val = robust_iqm(sub[metric])
+            if val is not None:
+                lines.append(f"    {metric}: {val:.4f}")
+    lines.append("")
+    lines.append("[all] IQM:")
+    for metric in ["acc", "auc", "corr", "r2"]:
+        val = robust_iqm(df[metric])
+        if val is not None:
+            lines.append(f"    {metric}: {val:.4f}")
+
+    summary = "\n".join(lines)
+    print(summary)
+    txt_name = csv_name.replace(".csv", ".txt")
+    with open(os.path.join(args.results_folder, txt_name), "w") as f:
+        f.write(summary + "\n")
