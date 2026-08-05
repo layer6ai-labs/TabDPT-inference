@@ -54,13 +54,13 @@ class TabDPTEstimator(BaseEstimator):
                 "cls" is classification, "reg" is regression
             normalizer: Specifies normalization used for preprocessing before retrieval. Note that
                 the model performs additional normalization in its forward function. By default the
-                scikit-learn StandardScaler is used, which matches model training. Other options are:
-                - "minmax": scikit-learn MinMaxScaler(feature_range=(-1,1))
-                - "robust": scikit-learn RobustScaler()
-                - "power": scikit-learn PowerTransformer()
-                - "quantile-uniform": scikit-learn QuantileTransformer(output_distribution="uniform"), rescaled to (-1,1)
-                - "quantile-normal": scikit-learn QuantileTransformer(output_distribution="normal")
-                - "log1p": sign(X) * log(1 + abs(X))
+                scikit-learn `StandardScaler` is used, which matches model training. Other options are:
+                - "minmax": scikit-learn `MinMaxScaler(feature_range=(-1,1))`
+                - "robust": scikit-learn `RobustScaler()`
+                - "power": scikit-learn `PowerTransformer()`
+                - "quantile-uniform": scikit-learn `QuantileTransformer(output_distribution="uniform")`, rescaled to (-1,1)
+                - "quantile-normal": scikit-learn `QuantileTransformer(output_distribution="normal")`
+                - "log1p": `sign(X) * log(1 + abs(X))`
                 - None: no normalization
             missing_indicators: If True, adds an additional binary column for each feature with
                 missing values indicating their position.
