@@ -43,9 +43,19 @@ Repository = "https://github.com/layer6ai-labs/TabDPT-inference"
 Paper = "https://arxiv.org/abs/2410.18164"
 Model = "https://huggingface.co/Layer6/TabDPT"
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.coverage.run]
+source = ["src/tabdpt"]
+
+[tool.coverage.report]
+show_missing = true
+
 [dependency-groups]
 dev = [
     "pytest>=8.4.1",
+    "pytest-cov>=5.0.0,<8.0",
     "rliable>=1.2.0,<2.0",
     "pandas>=2.3.2,<3.0",
     "openml>=0.15.1,<1.0",
