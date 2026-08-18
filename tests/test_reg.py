@@ -28,8 +28,8 @@ class TestRegression(unittest.TestCase):
         cls.base_model = TabDPTRegressor(device=DEVICE)
         cls.base_model.fit(cls.X_train, cls.y_train)
 
-        cls.y_train_pred = cls.base_model.predict(cls.X_train, n_ensembles=8, context_size=None, seed=42)
-        cls.y_test_pred = cls.base_model.predict(cls.X_test, n_ensembles=8, context_size=None, seed=42)
+        cls.y_train_pred = cls.base_model.predict(cls.X_train, seed=42)
+        cls.y_test_pred = cls.base_model.predict(cls.X_test, seed=42)
 
     def test_accuracy(self):
         """Train prediction should be near-perfect; v1.2 test R2 should be at least v1.1's."""
@@ -39,7 +39,7 @@ class TestRegression(unittest.TestCase):
 
         self.assertGreaterEqual(
             train_r2, TRAIN_MIN_R2 - TOLERANCE,
-            msg=f"train R2 {train_r2:.4f} below expectation {TRAIN_MIN_R2}",
+            msg=f"train R2 {train_r2:.4f} is over {TOLERANCE} below expectation {TRAIN_MIN_R2}",
         )
         self.assertGreaterEqual(
             test_r2, V1_REG_R2 - TOLERANCE,

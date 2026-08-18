@@ -31,7 +31,7 @@ TABARENA_IDS = [
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run TabDPT evaluation")
-    parser.add_argument("--context_size", type=int, help="Context size for the model")
+    parser.add_argument("--context-size", type=int, help="Context size for the model")
     parser.add_argument("--fold", type=int, default=0, help="Fold number to use for evaluation")
     parser.add_argument("--n-ensembles", type=int, default=8, help="Number of ensembles to use for evaluation")
     parser.add_argument("--temperature", type=float, default=1., help="Temperature for classification")
@@ -53,8 +53,7 @@ if __name__ == "__main__":
     if args.use_cpu:
         device = "cpu"
     else:
-        device = "cuda"
-        os.environ["CUDA_VISIBLE_DEVICES"] = str(args.gpu_to_use)
+        device = f"cuda:{args.gpu_to_use}"
 
     df_eval_cls = pd.read_csv(CLS_DATASET_PATH)
     cc18_test_df = df_eval_cls[df_eval_cls["test"] == True]
@@ -233,13 +232,13 @@ if __name__ == "__main__":
         for metric in ["acc", "auc", "corr", "r2"]:
             val = robust_iqm(sub[metric])
             if val is not None:
-                lines.append(f"    {metric}: {val:.4f}")
+                lines.append(f"\t{metric}: {val:.4f}")
     lines.append("")
     lines.append("[all] IQM:")
     for metric in ["acc", "auc", "corr", "r2"]:
         val = robust_iqm(df[metric])
         if val is not None:
-            lines.append(f"    {metric}: {val:.4f}")
+            lines.append(f"\t{metric}: {val:.4f}")
 
     summary = "\n".join(lines)
     print(summary)

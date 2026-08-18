@@ -29,7 +29,7 @@ Model weights are available on [Hugging Face](https://huggingface.co/Layer6/TabD
 
 ### Installation From Source
 
-To set up this repo, first ensure you have Python 3.10 or 3.11. Then, run the following:
+To set up this repo, first ensure you have Python 3.10 or newer. Then, run the following:
 ```
 git clone git@github.com:layer6ai-labs/TabDPT.git
 cd TabDPT
@@ -62,7 +62,11 @@ For better runtime performance, adjust `context_size` or `n_ensembles` to trade 
 
 ### Working Examples
 
-See `tests/cls_example.py` and `tests/reg_example.py` for examples of how to use TabDPT once installed.
+See `examples/cls_example.py` and `examples/reg_example.py` for examples of how to use TabDPT once installed.
+
+### Unit Tests
+
+Unit tests are in the `tests/` directory and can be run using `pytest`.
 
 ## Overview
 

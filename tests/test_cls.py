@@ -25,12 +25,8 @@ class TestClassification(unittest.TestCase):
         cls.X_train, cls.X_test, cls.y_train, cls.y_test = train_test_split(X, y, test_size=0.33, random_state=42)
         cls.base_model = TabDPTClassifier(device=DEVICE)
         cls.base_model.fit(cls.X_train, cls.y_train)
-        cls.y_train_pred = cls.base_model.predict(
-            cls.X_train, n_ensembles=8, temperature=0.8, context_size=None, permute_classes=True, seed=42,
-        )
-        cls.y_test_pred = cls.base_model.predict(
-            cls.X_test, n_ensembles=8, temperature=0.8, context_size=None, permute_classes=True, seed=42,
-        )
+        cls.y_train_pred = cls.base_model.predict(cls.X_train, seed=42)
+        cls.y_test_pred = cls.base_model.predict(cls.X_test, seed=42)
 
     def test_accuracy(self):
         """Train prediction should be perfect; v1.2 test accuracy should be at least v1.1's."""
@@ -38,9 +34,9 @@ class TestClassification(unittest.TestCase):
         test_acc = accuracy_score(self.y_test, self.y_test_pred)
         print(f"\n[cls] v1.2 test acc {test_acc:.4f} vs v1.1 {V1_CLS_ACC:.4f} (delta {test_acc - V1_CLS_ACC:+.4f})")
 
-        self.assertGreaterEqual(
-            train_acc, 0.999,
-            msg=f"train accuracy {train_acc:.4f} below expectation ~1.0",
+        self.assertAlmostEqual(
+            train_acc, 1.,
+            msg=f"train accuracy {train_acc:.4f} below expectation 1.0",
         )
         self.assertGreaterEqual(
             test_acc, V1_CLS_ACC - TOLERANCE,
