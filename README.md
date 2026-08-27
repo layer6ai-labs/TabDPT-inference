@@ -12,7 +12,13 @@
 
 This repository provides lightweight interface code to generate predictions on new tabular datasets. Full training code is available [here](https://github.com/layer6ai-labs/TabDPT-training/).
 
-## TabDPT v1.2
+## News
+
+### TODO, 2026: TabDPT v1.3
+
+After minor architectural tweaks and improvements to our training recipe, we're releasing TabDPT v1.3, which is similar to v1.2 but with improved predictive performance. See the [release notes](https://github.com/layer6ai-labs/TabDPT-inference/releases/tag/v1.3.0) for full details.
+
+### June 17, 2026: TabDPT v1.2
 
 We're pleased to announce TabDPT v1.2, or TabDPT-Turbo! This release accelerates TabDPT fitting and inference by multiple orders of magnitude (~120x on average on TabArena) while improving predictive performance. In our experiments, TabDPT-Turbo is the fastest model overall among leading foundation models.
 
@@ -26,6 +32,8 @@ pip install tabdpt
 ```
 
 Model weights are available on [Hugging Face](https://huggingface.co/Layer6/TabDPT). They will be automatically downloaded on first use.
+
+We currently update the minor version number when a new model version is released, while the patch version number is used for library changes that don't involve changes to the underlying model. To install a previous model version, use `pip install tabdpt==x.y.*` where `x.y` is the model version, e.g., `pip install tabdpt==1.1.*`.
 
 ### Installation From Source
 

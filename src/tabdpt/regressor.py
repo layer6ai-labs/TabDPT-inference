@@ -91,7 +91,7 @@ class TabDPTRegressor(TabDPTEstimator, RegressorMixin):
                 pred = self.model(
                     x_src=torch.cat([X_ctx, X_test[:, start:end]], dim=1),
                     y_src=y_ctx,
-                    num_features=num_features,
+                    is_cls=False
                 )
                 y_hat = self._expectation_from_regression_logits(
                     pred.squeeze(1)[:, self.max_num_classes:].float()
@@ -117,7 +117,7 @@ class TabDPTRegressor(TabDPTEstimator, RegressorMixin):
                 pred = self.model(
                     x_src=torch.cat([X_nni, X_eval], dim=1),
                     y_src=y_nni,
-                    num_features=num_features,
+                    is_cls=False
                 )
                 y_hat = self._expectation_from_regression_logits(pred.squeeze(0)[:, self.max_num_classes:].float())
                 pred_list.append(y_hat * std_y + mean_y)

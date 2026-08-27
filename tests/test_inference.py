@@ -120,7 +120,7 @@ class TestEstimatorConfig(unittest.TestCase):
         X, y = self._cls_data(n_features=140)  # > max_features (128) -> PCA reduction
         model = TabDPTClassifier(device=DEVICE, feature_reduction="pca", verbose=False)
         model.fit(X, y)
-        self.assertIsNotNone(model.V)
+        self.assertIsNotNone(model.projection)
         model.to("cpu")  # exercises the V.to(device) branch
         p = model.predict_proba(X, context_size=2048)
         self.assertEqual(p.shape, (N_TRAIN, N_CLASSES))
