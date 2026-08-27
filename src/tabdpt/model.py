@@ -58,15 +58,16 @@ class TabDPTModel(nn.Module):
         self.encoder = nn.Linear(num_features, ninp)
         self.enc_norm = nn.LayerNorm(ninp, elementwise_affine=False)
         self.dropout = nn.Dropout(p=dropout)
-        self.y_encoders = nn.ModuleList(
+        self.cls_y_encoders = nn.ModuleList([nn.Embedding(n_out, y_encoder_dim) for _ in range(nlayers)])
+        self.reg_y_encoders = nn.ModuleList(
             [
                 nn.Sequential(
-                    nn.Linear(1, 2 * y_encoder_dim),
+                    nn.Linear(1, y_encoder_dim),
                     nn.GELU(),
-                    nn.Linear(2 * y_encoder_dim, y_encoder_dim),
+                    nn.Linear(y_encoder_dim, y_encoder_dim),
                     nn.LayerNorm(y_encoder_dim, elementwise_affine=False),
                 )
-                for _ in range(nlayers)
+               for _ in range(nlayers)
             ]
         )
         self.head = nn.Sequential(nn.Linear(ninp, nhid), nn.GELU(), nn.Linear(nhid, n_out + regression_bin_count))
@@ -81,7 +82,7 @@ class TabDPTModel(nn.Module):
         self,
         x_src: torch.Tensor,
         y_src: torch.Tensor,
-        num_features: torch.Tensor,
+        is_cls: bool
     ) -> torch.Tensor:
         """Forward pass of the TabDPTModel.
 
@@ -92,7 +93,7 @@ class TabDPTModel(nn.Module):
                 `(1, n_ctx + n_eval, n_features)`.
             y_src: Target values with dimensions (B, T). The shape is `(n_batch, n_ctx)` when ordinary batching is used and
                 `(1, n_ctx)` when TabPFN-style batching is used.
-            num_features: Number of features - no longer used and will be removed in a future update.
+            is_cls: True for classification, False for regression
 
         Returns:
             torch.Tensor: Predicted values with dimensions (T, B, O). The T and B dimensions match `x_src` but with the
@@ -118,7 +119,11 @@ class TabDPTModel(nn.Module):
             src = torch.cat([self.thinking_embed.unsqueeze(1).expand(n_think, B, -1), src], dim=0)
 
         for l, layer in enumerate(self.transformer_encoder):
-            y_emb = self.y_encoders[l](y_src.unsqueeze(-1))
+            if is_cls:
+                y_cls = y_src.long().clamp(min=0, max=self.n_out - 1)
+                y_emb = self.cls_y_encoders[l](y_cls)
+            else:
+                y_emb = self.reg_y_encoders[l](y_src.unsqueeze(-1))
             if n_think > 0:
                 B = y_emb.shape[1]
                 y_emb = torch.cat([y_emb.new_zeros(n_think, B, y_emb.shape[-1]), y_emb], dim=0)
