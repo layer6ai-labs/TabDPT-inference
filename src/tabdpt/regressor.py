@@ -211,8 +211,8 @@ class TabDPTRegressor(TabDPTEstimator, RegressorMixin):
         """Predict regression targets, or the full predictive distribution.
 
         Default `output_type="mean"` matches the original point-prediction path.
-        `output_type="full"` returns ensembled logits and bin borders in raw
-        target space (for median/mode/quantiles/samples).
+        `output_type="full"` returns ensembled logits and bin borders in raw target space
+        (for median/mode/quantiles/samples).
         """
         if output_type not in ("mean", "full"):
             raise ValueError(f"Invalid output type: {output_type}")
