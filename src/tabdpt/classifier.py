@@ -81,7 +81,24 @@ class TabDPTClassifier(TabDPTEstimator, ClassifierMixin):
         return_logits: bool = False,
         seed: int | None = None,
         class_perm: np.ndarray | None = None,
-    ):
+    ) -> np.ndarray:
+        """Predict classification output without ensembling, returning class probabilities
+
+        Args:
+            X: Input inference instances, `n_instances` x `n_features`	.
+            temperature: Temperature scaling applied before softmax, can be used to calibrate probability outputs.
+            context_size: Maximum number of train points in the context. Uses all points if `None`, which can lead to
+                GPU OOMs. Otherwise reduces context size based on `context_reduction` setting.
+            batch_size: Number of inference points to use in each batch. If `None`, defaults to 4096 on CPU and 128k on
+                GPU. Can be increased for faster inference, or decreased to prevent OOMs.
+            return_logits: If `True`, returns logits without temperature scaling or softmax.
+            seed: Seed used for permuting feature/class order during ensembling. If `n_ensembles` is 1, then feature
+                permutation will only be done if this is set to a non-`None` value.
+            class_perm: An optional permutation of classes to apply before prediction, mainly for ensembling.
+
+        Returns:
+            A class probability array of size `n_instances` x `n_classes`.
+        """
         train_x, train_y, test_x = self._prepare_prediction(X, class_perm=class_perm, seed=seed)
         num_features = torch.tensor([train_x.shape[-1]], dtype=torch.long, device=train_x.device)
 
@@ -174,7 +191,23 @@ class TabDPTClassifier(TabDPTEstimator, ClassifierMixin):
         batch_size: int | None = None,
         permute_classes: bool = True,
         seed: int | None = None,
-    ):
+    ) -> np.ndarray:
+        """Predict classification output using an ensemble of models, returning class probabilities
+
+        Args:
+            X: Input inference instances, `n_instances` x `n_features`.
+            n_ensembles: Number of TabDPT runs to ensemble together.
+            temperature: Temperature scaling applied before softmax, can be used to calibrate probability outputs.
+            context_size: Maximum number of train points in the context. Uses all points if `None`, which can lead to
+                GPU OOMs. Otherwise reduces context size based on `context_reduction` setting.
+            batch_size: Number of inference points to use in each batch. If `None`, defaults to 4096 on CPU and 128k on
+                GPU. Can be increased for faster inference, or decreased to prevent OOMs.
+            permute_classes: Whether to permute classes during ensembled prediction.
+            seed: Seed used for permuting feature/class order during ensembling.
+
+        Returns:
+            A class probability array of size `n_instances` x `n_classes`.
+        """
         if n_ensembles == 1:
             return self.predict_proba(
                 X,
@@ -219,7 +252,25 @@ class TabDPTClassifier(TabDPTEstimator, ClassifierMixin):
         batch_size: int | None = None,
         permute_classes: bool = True,
         seed: int | None = None,
-    ):
+    ) -> np.ndarray:
+        """Predict classification output, returning class indices
+
+        Args:
+            X: Input inference instances, `n_instances` x `n_features`.
+            n_ensembles: Number of TabDPT runs to ensemble together.
+            temperature: Temperature scaling applied before softmax, can be used to calibrate probability outputs. Does
+                not affect class index predictions.
+            context_size: Maximum number of train points in the context. Uses all points if `None`, which can lead to
+                GPU OOMs. Otherwise reduces context size based on `context_reduction` setting.
+            batch_size: Number of inference points to use in each batch. If `None`, defaults to 4096 on CPU and 128k on
+                GPU. Can be increased for faster inference, or decreased to prevent OOMs.
+            permute_classes: Whether to permute classes during ensembled prediction.
+            seed: Seed used for permuting feature/class order during ensembling. If `n_ensembles` is 1, then feature
+                permutation will only be done if this is set to a non-`None` value.
+
+        Returns:
+            A class index vector of length `n_instances`.
+        """
         if n_ensembles == 1:
             return self.predict_proba(
                 X,

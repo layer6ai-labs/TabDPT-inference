@@ -12,6 +12,12 @@
 
 This repository provides lightweight interface code to generate predictions on new tabular datasets. Full training code is available [here](https://github.com/layer6ai-labs/TabDPT-training/).
 
+## TabDPT v1.2
+
+We're pleased to announce TabDPT v1.2, or TabDPT-Turbo! This release accelerates TabDPT fitting and inference by multiple orders of magnitude (~120x on average on TabArena) while improving predictive performance. In our experiments, TabDPT-Turbo is the fastest model overall among leading foundation models.
+
+More details and experimental results are provided in our [TabDPT-Turbo paper](https://openreview.net/forum?id=Y00pwFyrHR). As part of this release, we have made some API changes and changed some default hyperparameter values; see the [release notes](https://github.com/layer6ai-labs/TabDPT-inference/releases/tag/v1.2.0) for full details.
+
 ## Usage
 
 TabDPT is available on PyPI, and can be installed with:
@@ -23,7 +29,7 @@ Model weights are available on [Hugging Face](https://huggingface.co/Layer6/TabD
 
 ### Installation From Source
 
-To set up this repo, first ensure you have Python 3.10 or 3.11. Then, run the following:
+To set up this repo, first ensure you have Python 3.10 or newer. Then, run the following:
 ```
 git clone git@github.com:layer6ai-labs/TabDPT.git
 cd TabDPT
@@ -56,11 +62,15 @@ For better runtime performance, adjust `context_size` or `n_ensembles` to trade 
 
 ### Working Examples
 
-See the scripts in `tests/` and `examples/` for how to use TabDPT once installed:
+See the scripts in `examples/` for how to use TabDPT once installed:
 
-- `tests/cls_example.py` — classification with a point prediction and accuracy
-- `tests/reg_example.py` — regression with a point prediction and R²
+- `examples/cls_example.py` — classification with a point prediction and accuracy
+- `examples/reg_example.py` — regression with a point prediction and R²
 - `examples/reg_probabilistic_example.py` — regression with full distributional outputs (logits, quantiles, intervals, calibration)
+
+### Unit Tests
+
+Unit tests are in the `tests/` directory and can be run using `pytest`.
 
 ## Overview
 

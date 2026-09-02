@@ -213,6 +213,22 @@ class TabDPTRegressor(TabDPTEstimator, RegressorMixin):
         Default `output_type="mean"` matches the original point-prediction path.
         `output_type="full"` returns ensembled logits and bin borders in raw target space
         (for median/mode/quantiles/samples).
+
+        Args:
+            X: Input inference instances, `n_instances` x `n_features`.
+            n_ensembles: Number of TabDPT runs to ensemble together.
+            context_size: Maximum number of train points in the context. Uses all points if `None`, which can lead to
+                GPU OOMs. Otherwise reduces context size based on `context_reduction` setting.
+            batch_size: Number of inference points to use in each batch. If `None`, defaults to 4096 on CPU and 128k on
+                GPU. Can be increased for faster inference, or decreased to prevent OOMs.
+            seed: Seed used for permuting feature order during ensembling. If `n_ensembles` is 1, then feature
+                permutation will only be done if this is set to a non-`None` value.
+            output_type: `"mean"` returns a point prediction. `"full"` returns a `FullPrediction` with logits and
+                bin borders in raw target space.
+
+        Returns:
+            If `output_type="mean"`, a point prediction vector of length `n_instances`.
+            If `output_type="full"`, a `FullPrediction` dict with `logits` and `borders`.
         """
         if output_type not in ("mean", "full"):
             raise ValueError(f"Invalid output type: {output_type}")

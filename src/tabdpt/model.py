@@ -84,12 +84,20 @@ class TabDPTModel(nn.Module):
         num_features: torch.Tensor,
     ) -> torch.Tensor:
         """Forward pass of the TabDPTModel.
+
         Args:
-            x_src (torch.Tensor): Input features of shape (B, T, F).
-            y_src (torch.Tensor): Target values of shape (B, T).
-            return_log_act_norms (bool): Whether to return activation norms for logging.
+            x_src: Input features with dimensions (B, T, F). B is the ordinary batch dimension while T is the
+                transformer sequence dimension and F is the feature dimension. When ordinary batching is used, this is
+                of shape `(n_batch, n_ctx + 1, n_features)`, and when TabPFN-style batching is used, it is of shape
+                `(1, n_ctx + n_eval, n_features)`.
+            y_src: Target values with dimensions (B, T). The shape is `(n_batch, n_ctx)` when ordinary batching is used and
+                `(1, n_ctx)` when TabPFN-style batching is used.
+            num_features: Number of features - no longer used and will be removed in a future update.
+
         Returns:
-            torch.Tensor: Predicted values of shape (T, B, n_out + regression_bin_count).
+            torch.Tensor: Predicted values with dimensions (T, B, O). The T and B dimensions match `x_src` but with the
+                T dimension reduced by `n_ctx`. The O dimension is of shape `n_out + regression_bin_count`: the number
+                of classification plus regression outputs.
         """
         x_src = x_src.transpose(0, 1)
         y_src = y_src.transpose(0, 1)
@@ -187,14 +195,15 @@ class TransformerEncoderLayer(nn.Module):
         max_len: int,
         y_encoder_dim: int,
     ) -> None:
-        """
+        """Custom transformer encoder layer
+
         Args:
-            embed_dim (int): Dimension of the embedding.
-            num_heads (int): Number of attention heads.
-            ff_dim (int): Dimension of the feed-forward network.
-            base_len (int): Base length for attention scaling.
-            max_len (int): Maximum length for attention scaling. If equal to base_len, attention scaling is disabled.
-            y_encoder_dim (int): Dimension of per-layer y embedding; v_proj input is embed_dim + y_encoder_dim.
+            embed_dim: Dimension of the embedding.
+            num_heads: Number of attention heads.
+            ff_dim: Dimension of the feed-forward network.
+            base_len: Base length for attention scaling.
+            max_len: Maximum length for attention scaling. If equal to `base_len`, attention scaling is disabled.
+            y_encoder_dim: Dimension of per-layer y embedding; `v_proj` input is `embed_dim` + `y_encoder_dim`.
         """
         super().__init__()
         self.embed_dim = embed_dim
@@ -243,9 +252,10 @@ class TransformerEncoderLayer(nn.Module):
         """Compute the residual for this layer.
 
         Args:
-            x (torch.tensor): Input tensor of shape (L, B, D).
-            y (torch.tensor): Target embedding for the context region of shape (eval_pos, B, y_encoder_dim).
-            eval_pos (int): Number of context positions (length of y and K/V).
+            x: Input tensor of shape (L, B, D).
+            y: Target embedding for the context region of shape (`eval_pos`, B, `y_encoder_dim`).
+            eval_pos: Number of context positions (length of y and K/V).
+
         Returns:
             torch.tensor: Residual tensor to be added to input (same shape as input).
         """
