@@ -1,20 +1,15 @@
 import math
-from typing import Literal, TypedDict, overload
+from typing import Literal, overload
 
 import numpy as np
 import torch
 from sklearn.base import RegressorMixin
 
-from .bar_distribution import BarDistribution
+from .bar_distribution import FullPrediction
 from .estimator import TabDPTEstimator
 from .utils import generate_random_permutation, pad_x, normalize_data
 
 OutputType = Literal["mean", "full"]
-
-
-class FullPrediction(TypedDict):
-    logits: torch.Tensor
-    criterion: BarDistribution
 
 
 class TabDPTRegressor(TabDPTEstimator, RegressorMixin):
@@ -60,7 +55,7 @@ class TabDPTRegressor(TabDPTEstimator, RegressorMixin):
         weights = torch.softmax(reg_logits.float(), dim=-1)
         return (weights * bin_centres).sum(dim=-1)
 
-    def _bardist_from_norm_stats(self, mean_y: torch.Tensor, std_y: torch.Tensor) -> BarDistribution:
+    def _borders_from_norm_stats(self, mean_y: torch.Tensor, std_y: torch.Tensor) -> torch.Tensor:
         borders = torch.linspace(
             self.model.regression_bin_min,
             self.model.regression_bin_max,
@@ -68,7 +63,7 @@ class TabDPTRegressor(TabDPTEstimator, RegressorMixin):
             device=mean_y.device,
             dtype=mean_y.dtype,
         )
-        return BarDistribution(borders * std_y + mean_y)
+        return borders * std_y + mean_y
 
     @torch.inference_mode()
     def _predict(
@@ -216,8 +211,8 @@ class TabDPTRegressor(TabDPTEstimator, RegressorMixin):
         """Predict regression targets, or the full predictive distribution.
 
         Default `output_type="mean"` matches the original point-prediction path.
-        `output_type="full"` returns ensembled logits and a `BarDistribution`
-        criterion in raw target space (for median/mode/quantiles/samples).
+        `output_type="full"` returns ensembled logits and bin borders in raw
+        target space (for median/mode/quantiles/samples).
         """
         if output_type not in ("mean", "full"):
             raise ValueError(f"Invalid output type: {output_type}")
@@ -238,7 +233,7 @@ class TabDPTRegressor(TabDPTEstimator, RegressorMixin):
                 )
             return FullPrediction(
                 logits=logits,
-                criterion=self._bardist_from_norm_stats(mean_y, std_y),
+                borders=self._borders_from_norm_stats(mean_y, std_y),
             )
 
         if n_ensembles == 1:

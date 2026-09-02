@@ -25,24 +25,24 @@ predict_kwargs = dict(n_ensembles=2, seed=42)
 y_mean = model.predict(X_test, **predict_kwargs)
 print("mean R2:", r2_score(y_test, y_mean))
 
-# Full distributional output: logits and BarDistribution over the target
+# Full distributional output: logits and bin borders over the target
 full = model.predict(X_test, output_type="full", **predict_kwargs)
-logits, criterion = full["logits"], full["criterion"]
+logits, borders = full["logits"], full["borders"]
 print("logits shape:", tuple(logits.shape))
-print("num bins:", criterion.num_bars)
+print("num bins:", borders.numel() - 1)
 
 # Derive other point estimates and quantiles from the same distribution
-print("mean R2 (helper):", r2_score(y_test, distribution_mean(logits, criterion)))
-print("median R2:", r2_score(y_test, distribution_median(logits, criterion)))
-print("mode R2:", r2_score(y_test, distribution_mode(logits, criterion)))
+print("mean R2 (helper):", r2_score(y_test, distribution_mean(full)))
+print("median R2:", r2_score(y_test, distribution_median(full)))
+print("mode R2:", r2_score(y_test, distribution_mode(full)))
 
 quantiles = [0.1, 0.5, 0.9]
-quantile_preds = distribution_quantiles(logits, criterion, quantiles)
+quantile_preds = distribution_quantiles(full, quantiles)
 print("quantile shapes:", [q.shape for q in quantile_preds])
 
 # Interval calibration and sharpness from the predictive histogram
 probas = torch.softmax(logits, dim=-1).cpu().numpy()
-edges = criterion.borders.cpu().numpy()
+edges = borders.cpu().numpy()
 mids = (edges[:-1] + edges[1:]) / 2
 cdf, y = np.cumsum(probas, axis=-1), np.asarray(y_test, float)
 
