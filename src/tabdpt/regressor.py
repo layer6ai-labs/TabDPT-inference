@@ -215,8 +215,8 @@ class TabDPTRegressor(TabDPTEstimator, RegressorMixin):
         ) -> np.ndarray | FullPrediction:
         """Predict regression targets, or the full predictive distribution.
 
-        Default ``output_type="mean"`` matches the original point-prediction path.
-        ``output_type="full"`` returns ensembled logits and a ``BarDistribution``
+        Default `output_type="mean"` matches the original point-prediction path.
+        `output_type="full"` returns ensembled logits and a `BarDistribution`
         criterion in raw target space (for median/mode/quantiles/samples).
         """
         if output_type not in ("mean", "full"):

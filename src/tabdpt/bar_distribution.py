@@ -12,19 +12,19 @@ _DEFAULT_QUANTILES = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
 class BarDistribution(nn.Module):
     """Piecewise-uniform distribution over fixed-width bins.
 
-    Each bin is defined by consecutive entries in ``borders``. Model logits over
+    Each bin is defined by consecutive entries in `borders`. Model logits over
     bins are turned into a categorical distribution via softmax; within each bin
     the density is uniform, so the overall distribution is a histogram with
-    continuous support on ``[borders[0], borders[-1]]``.
+    continuous support on `[borders[0], borders[-1]]`.
     """
 
     def __init__(self, borders: torch.Tensor):
         """Build a bar distribution from bin edges.
 
         Args:
-            borders: Strictly increasing bin edges of shape ``(num_bars + 1,)``.
-                Defines ``num_bars`` contiguous intervals
-                ``[borders[i], borders[i + 1])``.
+            borders: Strictly increasing bin edges of shape `(num_bars + 1,)`.
+                Defines `num_bars` contiguous intervals
+                `[borders[i], borders[i + 1])`.
         """
         super().__init__()
         borders = borders.contiguous()
@@ -33,7 +33,7 @@ class BarDistribution(nn.Module):
 
     @property
     def bucket_widths(self) -> torch.Tensor:
-        """Width of each bin, shape ``(num_bars,)``."""
+        """Width of each bin, shape `(num_bars,)`."""
         return self.borders[1:] - self.borders[:-1]
 
     @property
@@ -45,12 +45,12 @@ class BarDistribution(nn.Module):
         """Expected value of the distribution.
 
         Args:
-            logits: Unnormalized log-probabilities of shape ``(*leading, num_bars)``,
-                where ``*leading`` indexes independent distributions (e.g. test
+            logits: Unnormalized log-probabilities of shape `(*leading, num_bars)`,
+                where `*leading` indexes independent distributions (e.g. test
                 points, or eval positions with optional model batching).
 
         Returns:
-            Expected target values of shape ``(*leading,)``.
+            Expected target values of shape `(*leading,)`.
         """
         bucket_means = self.borders[:-1] + self.bucket_widths / 2
         probs = torch.softmax(logits, dim=-1)
@@ -60,12 +60,12 @@ class BarDistribution(nn.Module):
         """Median of the distribution (50th percentile).
 
         Args:
-            logits: Unnormalized log-probabilities of shape ``(*leading, num_bars)``,
-                where ``*leading`` indexes independent distributions (e.g. test
+            logits: Unnormalized log-probabilities of shape `(*leading, num_bars)`,
+                where `*leading` indexes independent distributions (e.g. test
                 points, or eval positions with optional model batching).
 
         Returns:
-            Median target values of shape ``(*leading,)``.
+            Median target values of shape `(*leading,)`.
         """
         return self.icdf(logits, 0.5)
 
@@ -77,16 +77,16 @@ class BarDistribution(nn.Module):
         """Inverse CDF (quantile function).
 
         Args:
-            logits: Unnormalized log-probabilities of shape ``(*leading, num_bars)``,
-                where ``*leading`` indexes independent distributions (e.g. test
+            logits: Unnormalized log-probabilities of shape `(*leading, num_bars)`,
+                where `*leading` indexes independent distributions (e.g. test
                 points, or eval positions with optional model batching).
-            left_prob: Probability level(s) in ``[0, 1]``. A scalar applies the
+            left_prob: Probability level(s) in `[0, 1]`. A scalar applies the
                 same level to every distribution. A tensor must be broadcastable
-                to ``logits.shape[:-1]`` (for example shape ``(*leading,)``) so
+                to `logits.shape[:-1]` (for example shape `(*leading,)`) so
                 each distribution can use its own level.
 
         Returns:
-            Target values at the requested quantile(s), shape ``(*leading,)``.
+            Target values at the requested quantile(s), shape `(*leading,)`.
         """
         probs = logits.softmax(dim=-1)
         cumprobs = torch.cumsum(probs, dim=-1)
@@ -126,13 +126,13 @@ class BarDistribution(nn.Module):
         """Mode of the distribution (bin with highest probability density).
 
         Args:
-            logits: Unnormalized log-probabilities of shape ``(*leading, num_bars)``,
-                where ``*leading`` indexes independent distributions (e.g. test
+            logits: Unnormalized log-probabilities of shape `(*leading, num_bars)`,
+                where `*leading` indexes independent distributions (e.g. test
                 points, or eval positions with optional model batching).
 
         Returns:
             Midpoint of the highest-density bin for each distribution,
-            shape ``(*leading,)``.
+            shape `(*leading,)`.
         """
         density = logits.softmax(dim=-1) / self.bucket_widths
         # argmax returns the lowest-index bin when several share the max density.
@@ -143,19 +143,19 @@ class BarDistribution(nn.Module):
     def sample(self, logits: torch.Tensor) -> torch.Tensor:
         """Draw one sample from each indexed distribution.
 
-        For every leading dimension (all axes except the final ``num_bars``
+        For every leading dimension (all axes except the final `num_bars`
         axis), draws a single continuous target value from the corresponding
-        predictive distribution. At inference this is often ``(n_test, num_bars)``
-        (one distribution per test point), but any ``*leading`` layout is
+        predictive distribution. At inference this is often `(n_test, num_bars)`
+        (one distribution per test point), but any `*leading` layout is
         supported.
 
         Args:
-            logits: Unnormalized log-probabilities of shape ``(*leading, num_bars)``,
-                where ``*leading`` indexes independent distributions (e.g. test
+            logits: Unnormalized log-probabilities of shape `(*leading, num_bars)`,
+                where `*leading` indexes independent distributions (e.g. test
                 points, or eval positions with optional model batching).
 
         Returns:
-            Sampled target values of shape ``(*leading,)``.
+            Sampled target values of shape `(*leading,)`.
         """
         # One uniform draw per distribution; shape[:-1] covers all leading axes.
         # Only the last axis holds per-bin logits.
@@ -190,13 +190,13 @@ def distribution_quantiles(
     """Quantile values for each predictive distribution.
 
     Args:
-        logits: Unnormalized log-probabilities of shape ``(*leading, num_bars)``.
+        logits: Unnormalized log-probabilities of shape `(*leading, num_bars)`.
         criterion: Bar distribution whose borders define the support.
-        quantiles: Probability levels in ``[0, 1]``. Defaults to
-            ``[0.1, 0.2, ..., 0.9]``.
+        quantiles: Probability levels in `[0, 1]`. Defaults to
+            `[0.1, 0.2, ..., 0.9]`.
 
     Returns:
-        One NumPy array per quantile level, each of shape ``(*leading,)``.
+        One NumPy array per quantile level, each of shape `(*leading,)`.
     """
     quantiles = _DEFAULT_QUANTILES if quantiles is None else quantiles
     if not all((0 <= q <= 1) and isinstance(q, float) for q in quantiles):
