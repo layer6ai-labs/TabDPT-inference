@@ -62,7 +62,11 @@ For better runtime performance, adjust `context_size` or `n_ensembles` to trade 
 
 ### Working Examples
 
-See `examples/cls_example.py` and `examples/reg_example.py` for examples of how to use TabDPT once installed.
+See the scripts in `examples/` for how to use TabDPT once installed:
+
+- `examples/cls_example.py` — classification with a point prediction and accuracy
+- `examples/reg_example.py` — regression with a point prediction and R²
+- `examples/reg_probabilistic_example.py` — regression with full distributional outputs (logits, quantiles, intervals, calibration)
 
 ### Unit Tests
 
