@@ -16,7 +16,7 @@ This repository provides lightweight interface code to generate predictions on n
 
 ### September 8, 2026: TabDPT v1.3
 
-After minor architectural tweaks and improvements to our training recipe, we're releasing TabDPT v1.3, which is similar to v1.2 but with improved predictive performance. See the [release notes](https://github.com/layer6ai-labs/TabDPT-inference/releases/tag/v1.3.0) for full details.
+After minor architectural tweaks and improvements to our training recipe, we're releasing TabDPT v1.3, which is similar to v1.2 but with improved predictive performance. We've also added an option for full probabilistic regression outputs, with helper functions for calculating quantiles and other statistics of the output distributions. See the [release notes](https://github.com/layer6ai-labs/TabDPT-inference/releases/tag/v1.3.0) for full details.
 
 ### June 17, 2026: TabDPT v1.2
 
