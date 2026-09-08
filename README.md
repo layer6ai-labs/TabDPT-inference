@@ -14,7 +14,7 @@ This repository provides lightweight interface code to generate predictions on n
 
 ## News
 
-### TODO, 2026: TabDPT v1.3
+### September 8, 2026: TabDPT v1.3
 
 After minor architectural tweaks and improvements to our training recipe, we're releasing TabDPT v1.3, which is similar to v1.2 but with improved predictive performance. See the [release notes](https://github.com/layer6ai-labs/TabDPT-inference/releases/tag/v1.3.0) for full details.
 
@@ -103,14 +103,28 @@ TabDPT uses retrieval and self-supervised learning to remove constraints on data
 	</thead>
 	<tbody>
 		<tr class="odd">
-			<td style="text-align: center;"><strong>TabDPT v1.1 (Ours)</strong></td>
-			<td><strong>0.976 <sub><sup>[0.974, 0.978]</sup></sub></strong></td>
-			<td><strong>0.928 <sub><sup>[0.926, 0.931]</sup></sub></strong></td>
-			<td><strong>0.920 <sub><sup>[0.918, 0.922]</sup></sub></strong></td>
-			<td><strong>0.847 <sub><sup>[0.843, 0.851]</sup></sub></strong></td>
+			<td style="text-align: center;"><strong>TabDPT v1.3</strong></td>
+			<td><strong>0.980 <sub><sup>[0.978, 0.982]</sup></sub></strong></td>
+			<td><strong>0.934 <sub><sup>[0.931, 0.937]</sup></sub></strong></td>
+			<td><strong>0.926 <sub><sup>[0.922, 0.930]</sup></sub></strong></td>
+			<td><strong>0.860 <sub><sup>[0.853, 0.866]</sup></sub></strong></td>
 		</tr>
 		<tr class="even">
-			<td style="text-align: center;">TabDPT v1.0 (Ours)</td>
+			<td style="text-align: center;">TabDPT v1.2</td>
+			<td>0.978 <sub><sup>[0.976, 0.980]</sup></sub></td>
+			<td>0.930 <sub><sup>[0.926, 0.933]</sup></sub></td>
+			<td>0.924 <sub><sup>[0.918, 0.928]</sup></sub></td>
+			<td>0.855 <sub><sup>[0.846, 0.863]</sup></sub></td>
+		</tr>
+		<tr class="odd">
+			<td style="text-align: center;">TabDPT v1.1</td>
+			<td>0.976 <sub><sup>[0.974, 0.978]</sup></sub></td>
+			<td>0.928 <sub><sup>[0.926, 0.931]</sup></sub></td>
+			<td>0.920 <sub><sup>[0.918, 0.922]</sup></sub></td>
+			<td>0.847 <sub><sup>[0.843, 0.851]</sup></sub></td>
+		</tr>
+		<tr class="even">
+			<td style="text-align: center;">TabDPT v1.0</td>
 			<td>0.972 <sub><sup>[0.971, 0.973]</sup></sub></td>
 			<td>0.917 <sub><sup>[0.915, 0.919]</sup></sub></td>
 			<td>0.911 <sub><sup>[0.908, 0.913]</sup></sub></td>
