@@ -16,7 +16,7 @@ from .model import TabDPTModel
 from .utils import convert_to_torch_tensor, Log1pScaler, generate_random_permutation, pad_x
 
 # Constants for model caching and download
-_VERSION = "1_2"
+_VERSION = "1_3"
 _MODEL_NAME = f"tabdpt{_VERSION}.safetensors"
 _HF_REPO_ID = "Layer6/TabDPT"
 
@@ -149,7 +149,7 @@ class TabDPTEstimator(BaseEstimator):
                     '["standard", "minmax", "robust", "power", "quantile-uniform", "quantile-normal", "log1p", None]'
                 )
 
-        self.V = None
+        self.projection = None
 
     def fit(self, X: np.ndarray, y: np.ndarray):
         assert isinstance(X, np.ndarray), "X must be a numpy array"
@@ -176,7 +176,7 @@ class TabDPTEstimator(BaseEstimator):
         self.y_train = y
         if self.n_features > self.max_features and self.feature_reduction == "pca":
             train_x = convert_to_torch_tensor(self.X_train).to(self.device).float()
-            _, _, self.V = torch.pca_lowrank(train_x, q=min(train_x.shape[0], self.max_features))
+            _, _, self.projection = torch.pca_lowrank(train_x, q=min(train_x.shape[0], self.max_features))
 
         # Reset in case the model was previously fit, this will be lazily initialized
         self.faiss_knn = None
@@ -189,8 +189,8 @@ class TabDPTEstimator(BaseEstimator):
         self.device = device
         self.model.to(device)
 
-        if self.V is not None:
-            self.V = self.V.to(device)
+        if self.projection is not None:
+            self.projection = self.projection.to(device)
 
     def _get_faiss_knn_indices(self, X_test: np.ndarray, context_size: int, seed: int | None = None):
         if self.faiss_knn is None:  # Lazily perform initialization
@@ -289,8 +289,8 @@ class TabDPTEstimator(BaseEstimator):
         # Apply PCA/subsampling to reduce the number of features if necessary
         if self.n_features > self.max_features:
             if self.feature_reduction == "pca":
-                train_x = train_x @ self.V
-                test_x = test_x @ self.V
+                train_x = train_x @ self.projection
+                test_x = test_x @ self.projection
             elif self.feature_reduction == "subsample":
                 feat_perm = generate_random_permutation(train_x.shape[1], seed)
                 train_x = train_x[:, feat_perm][:, :self.max_features]

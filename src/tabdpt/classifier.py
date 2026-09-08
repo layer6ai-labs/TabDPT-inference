@@ -57,7 +57,7 @@ class TabDPTClassifier(TabDPTEstimator, ClassifierMixin):
             forward_out = self.model(
                 x_src=torch.cat([X_context, X_eval], dim=1),
                 y_src=y_digit,
-                num_features=num_features,
+                is_cls=True
             )
             chunk = forward_out[-n_eval:, :, : self.max_num_classes].float().detach()
             digit_log_probs.append(torch.nn.functional.log_softmax(chunk, dim=-1))
@@ -129,7 +129,7 @@ class TabDPTClassifier(TabDPTEstimator, ClassifierMixin):
                     pred = self.model(
                         x_src=torch.cat([X_ctx, X_test[:, start:end]], dim=1),
                         y_src=y_ctx,
-                        num_features=num_features,
+                        is_cls=True
                     )
                     pred = torch.nn.functional.log_softmax(pred[..., : self.num_classes].float(), dim=-1)
                 else:
@@ -161,7 +161,7 @@ class TabDPTClassifier(TabDPTEstimator, ClassifierMixin):
                     pred = self.model(
                         x_src=torch.cat([X_nni, X_eval], dim=1),
                         y_src=y_nni,
-                        num_features=num_features,
+                        is_cls=True
                     )
                     pred = torch.nn.functional.log_softmax(pred[..., : self.num_classes].float(), dim=-1)
                 else:

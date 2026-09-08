@@ -12,7 +12,13 @@
 
 This repository provides lightweight interface code to generate predictions on new tabular datasets. Full training code is available [here](https://github.com/layer6ai-labs/TabDPT-training/).
 
-## TabDPT v1.2
+## News
+
+### September 8, 2026: TabDPT v1.3
+
+After minor architectural tweaks and improvements to our training recipe, we're releasing TabDPT v1.3, which is similar to v1.2 but with improved predictive performance. We've also added an option for full probabilistic regression outputs, with helper functions for calculating quantiles and other statistics of the output distributions. See the [release notes](https://github.com/layer6ai-labs/TabDPT-inference/releases/tag/v1.3.0) for full details.
+
+### June 17, 2026: TabDPT v1.2
 
 We're pleased to announce TabDPT v1.2, or TabDPT-Turbo! This release accelerates TabDPT fitting and inference by multiple orders of magnitude (~120x on average on TabArena) while improving predictive performance. In our experiments, TabDPT-Turbo is the fastest model overall among leading foundation models.
 
@@ -26,6 +32,8 @@ pip install tabdpt
 ```
 
 Model weights are available on [Hugging Face](https://huggingface.co/Layer6/TabDPT). They will be automatically downloaded on first use.
+
+We currently update the minor version number when a new model version is released, while the patch version number is used for library changes that don't involve changes to the underlying model. To install a previous model version, use `pip install tabdpt==x.y.*` where `x.y` is the model version, e.g., `pip install tabdpt==1.1.*`.
 
 ### Installation From Source
 
@@ -99,14 +107,28 @@ TabDPT uses retrieval and self-supervised learning to remove constraints on data
 	</thead>
 	<tbody>
 		<tr class="odd">
-			<td style="text-align: center;"><strong>TabDPT v1.1 (Ours)</strong></td>
-			<td><strong>0.976 <sub><sup>[0.974, 0.978]</sup></sub></strong></td>
-			<td><strong>0.928 <sub><sup>[0.926, 0.931]</sup></sub></strong></td>
-			<td><strong>0.920 <sub><sup>[0.918, 0.922]</sup></sub></strong></td>
-			<td><strong>0.847 <sub><sup>[0.843, 0.851]</sup></sub></strong></td>
+			<td style="text-align: center;"><strong>TabDPT v1.3</strong></td>
+			<td><strong>0.980 <sub><sup>[0.978, 0.982]</sup></sub></strong></td>
+			<td><strong>0.934 <sub><sup>[0.931, 0.937]</sup></sub></strong></td>
+			<td><strong>0.926 <sub><sup>[0.922, 0.930]</sup></sub></strong></td>
+			<td><strong>0.860 <sub><sup>[0.853, 0.866]</sup></sub></strong></td>
 		</tr>
 		<tr class="even">
-			<td style="text-align: center;">TabDPT v1.0 (Ours)</td>
+			<td style="text-align: center;">TabDPT v1.2</td>
+			<td>0.978 <sub><sup>[0.976, 0.980]</sup></sub></td>
+			<td>0.930 <sub><sup>[0.926, 0.933]</sup></sub></td>
+			<td>0.924 <sub><sup>[0.918, 0.928]</sup></sub></td>
+			<td>0.855 <sub><sup>[0.846, 0.863]</sup></sub></td>
+		</tr>
+		<tr class="odd">
+			<td style="text-align: center;">TabDPT v1.1</td>
+			<td>0.976 <sub><sup>[0.974, 0.978]</sup></sub></td>
+			<td>0.928 <sub><sup>[0.926, 0.931]</sup></sub></td>
+			<td>0.920 <sub><sup>[0.918, 0.922]</sup></sub></td>
+			<td>0.847 <sub><sup>[0.843, 0.851]</sup></sub></td>
+		</tr>
+		<tr class="even">
+			<td style="text-align: center;">TabDPT v1.0</td>
 			<td>0.972 <sub><sup>[0.971, 0.973]</sup></sub></td>
 			<td>0.917 <sub><sup>[0.915, 0.919]</sup></sub></td>
 			<td>0.911 <sub><sup>[0.908, 0.913]</sup></sub></td>

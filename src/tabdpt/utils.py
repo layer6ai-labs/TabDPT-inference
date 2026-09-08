@@ -71,8 +71,7 @@ def convert_to_torch_tensor(input):
         return torch.from_numpy(input)
     elif torch.is_tensor(input):
         return input
-    else:
-        raise TypeError("Input must be a NumPy array or a PyTorch tensor.")
+    raise TypeError("Input must be a NumPy array or a PyTorch tensor.")
 
 
 def pad_x(X: torch.Tensor, num_features: int = 100):

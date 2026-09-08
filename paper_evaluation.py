@@ -46,7 +46,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--model-weight-path", type=str, default=None,
-        help="Path to model weights. Defaults to the estimator's default (v1.2).",
+        help="Path to model weights. Defaults to the estimator's default.",
     )
     args = parser.parse_args()
 
@@ -216,9 +216,9 @@ if __name__ == "__main__":
         except TypeError:
             return None
 
-    weights_used = args.model_weight_path or "<estimator default (v1.2)>"
+    weights_used = args.model_weight_path or "<estimator default>"
     lines = [
-        f"TabDPT v1.2 paper evaluation",
+        f"TabDPT paper evaluation",
         f"weights: {weights_used}",
         f"fold={args.fold}  N={args.n_ensembles}  T={args.temperature}  context={args.context_size}  seed={args.seed}",
         f"csv: {csv_name}",

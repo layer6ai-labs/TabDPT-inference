@@ -1,4 +1,4 @@
-"""TabDPTEstimator init and weight loading, exercised against the real in-repo v1.2 checkpoint."""
+"""TabDPTEstimator init and weight loading, exercised against the real in-repo checkpoint."""
 import pytest
 import torch
 from sklearn.preprocessing import (
@@ -18,8 +18,8 @@ from device_utils import pick_device
 
 DEVICE = pick_device()
 
-V12_MAX_FEATURES = 128
-V12_MAX_NUM_CLASSES = 16
+MAX_FEATURES = 128
+MAX_NUM_CLASSES = 16
 
 
 def build(**kwargs):
@@ -29,11 +29,11 @@ def build(**kwargs):
 
 # --- Real weight loading + init ---
 
-def test_real_v12_load_and_init():
-    """The v1.2 checkpoint loads, exposes the right dims, and populates real tensors."""
+def test_real_load_and_init():
+    """The checkpoint loads, exposes the right dims, and populates real tensors."""
     model = TabDPTClassifier(device=DEVICE)
-    assert model.max_features == V12_MAX_FEATURES
-    assert model.max_num_classes == V12_MAX_NUM_CLASSES
+    assert model.max_features == MAX_FEATURES
+    assert model.max_num_classes == MAX_NUM_CLASSES
     assert isinstance(model.scaler, StandardScaler)  # default normalizer
 
     thinking = model.model.thinking_embed
