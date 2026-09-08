@@ -10,7 +10,7 @@ from device_utils import pick_device, seed_everything
 DEVICE = pick_device()
 N_TRAIN = 60
 N_CLASSES = 3
-
+MAX_NUM_CLASSES = 16
 
 class TestClassifier(unittest.TestCase):
     @classmethod
@@ -69,7 +69,7 @@ class TestLargeClass(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         seed_everything(1)
-        n_classes = 18  # > max_num_classes (16) for the v1.2 weights
+        n_classes = MAX_NUM_CLASSES + 2
         n_rows = n_classes * 10
         cls.n_classes = n_classes
         cls.X = np.random.normal(size=(n_rows, 5)).astype(np.float32)
