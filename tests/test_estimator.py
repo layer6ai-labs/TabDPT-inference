@@ -82,3 +82,34 @@ def test_invalid_feature_reduction_raises():
 def test_invalid_faiss_metric_raises():
     with pytest.raises(AssertionError):
         build(faiss_metric="bad")
+
+
+# --- Separable model loading ---
+
+def test_load_model_is_separately_callable():
+    """``_load_model`` can be re-run (or overridden) after construction to swap the network."""
+    est = build()
+    first_model = est.model
+    est._load_model()
+    assert est.model is not first_model  # a fresh module, same checkpoint
+    assert est.max_features == MAX_FEATURES  # unaffected: derived once, from the first load
+
+
+def test_load_model_can_be_overridden_to_share_a_network():
+    """A caller can skip the per-instance download/build entirely by overriding ``_load_model``."""
+    donor = build()
+
+    class _SharedWeightEstimator(TabDPTEstimator):
+        def _load_model(self) -> None:
+            self.model = donor.model  # reuse the donor's network instead of loading one
+
+    est = _SharedWeightEstimator(mode="cls", device=DEVICE)
+    assert est.model is donor.model
+
+
+def test_get_params_reads_every_constructor_argument():
+    """``clip_sigma`` and ``model_weight_path`` are stored on ``self``, as sklearn's contract requires."""
+    est = build(clip_sigma=4.0)
+    params = est.get_params()
+    assert params["clip_sigma"] == 4.0
+    assert params["model_weight_path"] is None
