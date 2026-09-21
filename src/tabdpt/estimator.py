@@ -90,21 +90,10 @@ class TabDPTEstimator(BaseEstimator):
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self.use_flash = use_flash and self.device == "cuda"
         self.missing_indicators = missing_indicators
+        self.clip_sigma = clip_sigma
+        self.model_weight_path = model_weight_path
 
-        if model_weight_path:
-            self.path = model_weight_path
-        else:
-            self.path = self.download_weights()
-
-        with safe_open(self.path, framework="pt", device=self.device) as f:
-            meta = f.metadata()
-            cfg_dict = json.loads(meta["cfg"])
-            cfg = OmegaConf.create(cfg_dict)
-            model_state = {k: f.get_tensor(k) for k in f.keys()}
-
-        cfg.env.device = self.device
-        self.model = TabDPTModel.load(model_state=model_state, config=cfg, use_flash=self.use_flash, clip_sigma=clip_sigma)
-        self.model.eval()
+        self._load_model()
 
         self.max_features = self.model.num_features
         self.max_num_classes = self.model.n_out
@@ -150,6 +139,32 @@ class TabDPTEstimator(BaseEstimator):
                 )
 
         self.projection = None
+
+    def _load_model(self) -> None:
+        """Read the checkpoint and build ``self.model``; the constructor calls this once.
+
+        Separated out so a caller can share one network across several estimators built with the
+        same ``model_weight_path`` (or the same default download), ``use_flash`` and ``clip_sigma``:
+        build one estimator, then for the next skip its own load by overriding or monkeypatching
+        this method to hand back the cached module instead of rebuilding it. Downloads from
+        Hugging Face when ``model_weight_path`` is unset.
+        """
+        if self.model_weight_path:
+            self.path = self.model_weight_path
+        else:
+            self.path = self.download_weights()
+
+        with safe_open(self.path, framework="pt", device=self.device) as f:
+            meta = f.metadata()
+            cfg_dict = json.loads(meta["cfg"])
+            cfg = OmegaConf.create(cfg_dict)
+            model_state = {k: f.get_tensor(k) for k in f.keys()}
+
+        cfg.env.device = self.device
+        self.model = TabDPTModel.load(
+            model_state=model_state, config=cfg, use_flash=self.use_flash, clip_sigma=self.clip_sigma
+        )
+        self.model.eval()
 
     def fit(self, X: np.ndarray, y: np.ndarray):
         assert isinstance(X, np.ndarray), "X must be a numpy array"
