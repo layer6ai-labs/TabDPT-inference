@@ -40,13 +40,14 @@ def maskmean(x, mask, dim):
 
 def maskstd(x, mask, dim=0):
     num = mask.sum(dim=dim, keepdim=True)
-    mean = maskmean(x, mask, dim=0)
+    mean = maskmean(x, mask, dim=dim)
     diffs = torch.where(mask, mean - x, 0)
-    return ((diffs**2).sum(dim=0, keepdim=True) / (num - 1)) ** 0.5
+    return ((diffs**2).sum(dim=dim, keepdim=True) / (num - 1)) ** 0.5
 
 
 def normalize_data(data, eval_pos=-1, dim=0, return_mean_std: bool = False):
     X = data[:eval_pos] if eval_pos > 0 else data
+    X = X.detach() # Allow gradient computations wrt inputs
     mask = ~torch.isnan(X)
     mean = maskmean(X, mask, dim=dim)
     std = maskstd(X, mask, dim=dim) + 1e-6
@@ -58,6 +59,7 @@ def normalize_data(data, eval_pos=-1, dim=0, return_mean_std: bool = False):
 
 def clip_outliers(data, eval_pos=-1, n_sigma=4, dim=0):
     X = data[:eval_pos] if eval_pos > 0 else data
+    X = X.detach() # Allow gradient computations wrt inputs
     mask = ~torch.isnan(X)
     mean = maskmean(X, mask, dim=dim)
     cutoff = n_sigma * maskstd(X, mask, dim=dim)

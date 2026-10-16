@@ -1,6 +1,7 @@
+from __future__ import annotations
 import json
 from typing import Literal
-import warnings
+from dataclasses import dataclass
 
 import numpy as np
 import torch
@@ -13,7 +14,7 @@ from sklearn.preprocessing import StandardScaler, MinMaxScaler, RobustScaler, Po
 from sklearn.utils.validation import check_is_fitted
 
 from .model import TabDPTModel
-from .utils import convert_to_torch_tensor, Log1pScaler, generate_random_permutation, pad_x
+from .utils import convert_to_torch_tensor, Log1pScaler, generate_random_permutation, pad_x, normalize_data
 
 # Constants for model caching and download
 _VERSION = "1_3"
@@ -283,8 +284,38 @@ class TabDPTEstimator(BaseEstimator):
         y_ctx = ctx_y[None, :].float()
         return X_ctx, y_ctx
 
-    def _prepare_prediction(self, X: np.ndarray, class_perm: np.ndarray | None = None, seed: int | None = None):
+    def _get_ensemble_iterator(self, n_ensembles: int, seed: int | None = None):
+        generator = np.random.SeedSequence(seed)
+        ensemble_iterator = generator.generate_state(n_ensembles)
+        if self.verbose:
+            from tqdm import tqdm
+            ensemble_iterator = tqdm(ensemble_iterator, desc="ensembles")
+        return ensemble_iterator
+
+    @dataclass
+    class PreprocessResult:
+        X_ctx: torch.Tensor
+        y_ctx: torch.Tensor
+        X_query: torch.Tensor
+        feat_perm: torch.Tensor
+        mean_y: torch.Tensor | None
+        std_y: torch.Tensor | None
+
+    def _preprocess(
+        self,
+        X: np.ndarray,
+        context_size: int | None = None,
+        seed: int | None = None,
+        class_perm: np.ndarray | None = None,
+        normalize_y_ctx: bool = False
+    ) -> TabDPTEstimator.PreprocessResult:
+        """
+        Do all operations requred to go from a predict function input to tensors for the model
+        """
+
         check_is_fitted(self)
+        if context_size is None:
+            context_size = np.inf
 
         if self.missing_indicators:
             inds = np.isnan(X)[:, self.has_missing_indicator].astype(float)
@@ -295,35 +326,56 @@ class TabDPTEstimator(BaseEstimator):
             if self.normalizer == 'quantile-uniform':
                 self.X_test = 2*self.X_test - 1
 
-        train_x, train_y, test_x = (
+        X_ctx, y_ctx, X_query = (
             convert_to_torch_tensor(self.X_train).to(self.device).float(),
             convert_to_torch_tensor(self.y_train).to(self.device).float(),
             convert_to_torch_tensor(self.X_test).to(self.device).float(),
         )
 
         # Apply PCA/subsampling to reduce the number of features if necessary
+        feat_perm = None
         if self.n_features > self.max_features:
             if self.feature_reduction == "pca":
-                train_x = train_x @ self.projection
-                test_x = test_x @ self.projection
+                X_ctx = X_ctx @ self.projection
+                X_query = X_query @ self.projection
             elif self.feature_reduction == "subsample":
-                feat_perm = generate_random_permutation(train_x.shape[1], seed)
-                train_x = train_x[:, feat_perm][:, :self.max_features]
-                test_x = test_x[:, feat_perm][:, :self.max_features]
+                feat_perm = generate_random_permutation(X_ctx.shape[1], seed)
+                X_ctx = X_ctx[:, feat_perm][:, :self.max_features]
+                X_query = X_query[:, feat_perm][:, :self.max_features]
 
         if class_perm is not None:
             assert self.mode == "cls", "class_perm only makes sense for classification"
             inv_perm = np.argsort(class_perm)
-            train_y = train_y.to(torch.long)
-            inv_perm = torch.as_tensor(inv_perm, device=train_y.device)
-            train_y = inv_perm[train_y].to(torch.float)
+            y_ctx = y_ctx.to(torch.long)
+            inv_perm = torch.as_tensor(inv_perm, device=y_ctx.device)
+            y_ctx = inv_perm[y_ctx].to(torch.float)
 
-        return train_x, train_y, test_x
+        if feat_perm is None:
+            if seed is not None:
+                feat_perm = generate_random_permutation(X_ctx.shape[1], seed)
+                X_ctx = X_ctx[:, feat_perm]
+                X_query = X_query[:, feat_perm]
+            else:
+                feat_perm = torch.arange(X_ctx.shape[1])
 
-    def _get_ensemble_iterator(self, n_ensembles: int, seed: int | None = None):
-        generator = np.random.SeedSequence(seed)
-        ensemble_iterator = generator.generate_state(n_ensembles)
-        if self.verbose:
-            from tqdm import tqdm
-            ensemble_iterator = tqdm(ensemble_iterator, desc="ensembles")
-        return ensemble_iterator
+        if normalize_y_ctx:
+            y_ctx, mean_y, std_y = normalize_data(y_ctx, return_mean_std=True)
+        else:
+            mean_y, std_y = None, None
+
+        if not self._uses_stacked_context(context_size):
+            indices_nni = self._get_context_indices(
+                self.X_test, context_size=context_size, seed=seed
+            )
+            X_nni = X_ctx[torch.tensor(indices_nni)]
+            y_nni = y_ctx[torch.tensor(indices_nni)]
+            X_nni = pad_x(X_nni, self.max_features)
+            X_query = pad_x(X_query.unsqueeze(1), self.max_features).to(self.device)
+            return self.PreprocessResult(X_nni, y_nni, X_query, feat_perm, mean_y, std_y)
+
+        X_ctx, y_ctx = self._prepare_stacked_context(X_ctx, y_ctx, context_size, seed)
+        X_query = pad_x(X_query[None, :, :], self.max_features).to(self.device)
+        return self.PreprocessResult(X_ctx, y_ctx, X_query, feat_perm, mean_y, std_y)
+
+    def _default_batch_size(self):
+        return 4096 if self.device == "cpu" else 128*1024
