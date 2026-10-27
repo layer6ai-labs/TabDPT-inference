@@ -88,12 +88,16 @@ class TabDPTRegressor(TabDPTEstimator, RegressorMixin):
 
             if self._uses_stacked_context(context_size):
                 X_query_batch = X_query[:, start:end]
+                X_ctx_batch = X_ctx
+                y_ctx_batch = y_ctx
             else:
                 X_query_batch = X_query[start:end]
+                X_ctx_batch = X_ctx[start:end]
+                y_ctx_batch = y_ctx[start:end]
 
             pred = self.model(
-                x_src=torch.cat([X_ctx, X_query_batch], dim=1),
-                y_src=y_ctx,
+                x_src=torch.cat([X_ctx_batch, X_query_batch], dim=1),
+                y_src=y_ctx_batch,
                 is_cls=False
             )
             if self._uses_stacked_context(context_size):

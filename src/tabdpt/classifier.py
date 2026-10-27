@@ -115,18 +115,22 @@ class TabDPTClassifier(TabDPTEstimator, ClassifierMixin):
 
             if self._uses_stacked_context(context_size):
                 X_query_batch = X_query[:, start:end]
+                X_ctx_batch = X_ctx
+                y_ctx_batch = y_ctx
             else:
                 X_query_batch = X_query[start:end]
+                X_ctx_batch = X_ctx[start:end]
+                y_ctx_batch = y_ctx[start:end]
 
             if self.num_classes <= self.max_num_classes:
                 pred = self.model(
-                    x_src=torch.cat([X_ctx, X_query_batch], dim=1),
-                    y_src=y_ctx,
+                    x_src=torch.cat([X_ctx_batch, X_query_batch], dim=1),
+                    y_src=y_ctx_batch,
                     is_cls=True
                 )
                 pred = torch.nn.functional.log_softmax(pred[..., : self.num_classes].float(), dim=-1)
             else:
-                pred = self._predict_large_cls(X_ctx, X_query_batch, y_ctx, num_features)
+                pred = self._predict_large_cls(X_ctx_batch, X_query_batch, y_ctx_batch, num_features)
 
             if not return_logits:
                 pred = pred[..., :self.num_classes] / temperature
