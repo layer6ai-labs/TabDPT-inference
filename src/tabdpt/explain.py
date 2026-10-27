@@ -1,6 +1,5 @@
 import math
 import warnings
-from captum.attr import IntegratedGradients
 import numpy as np
 import torch
 
@@ -46,6 +45,7 @@ def integrated_gradients(
     Returns:
         Local attributions of size `n_test` x `n_features`
     """
+    from captum.attr import IntegratedGradients
 
     if context_size is not None and not fitted_model._uses_stacked_context(context_size):
         raise NotImplementedError(
