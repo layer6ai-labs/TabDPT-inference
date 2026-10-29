@@ -97,3 +97,14 @@ class TestIntegratedGradients(unittest.TestCase):
         model.fit(self.X_train, self.y_reg)
         attrs = integrated_gradients(model, self.X_test, batch_size=N_TEST // 10)
         self.validate_attrs(attrs)
+
+    def test_nan_cols(self):
+        model = TabDPTClassifier(device=DEVICE)
+        X_train = self.X_train.copy()
+        X_train[:, 0] = np.nan
+        X_train[:, N_COL-1] = np.nan
+        model.fit(X_train, self.y_cls)
+        attrs = integrated_gradients(model, self.X_test)
+        self.assertEqual(attrs.shape, (N_TEST, N_COL))
+        self.assertTrue(np.all(attrs[:, 0] == 0))
+        self.assertTrue(np.all(attrs[:, N_COL-1] == 0))

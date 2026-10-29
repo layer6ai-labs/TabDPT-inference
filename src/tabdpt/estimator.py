@@ -300,6 +300,7 @@ class TabDPTEstimator(BaseEstimator):
         feat_perm: torch.Tensor
         mean_y: torch.Tensor | None
         std_y: torch.Tensor | None
+        indices_nni: torch.Tensor | None
 
     def _preprocess(
         self,
@@ -367,15 +368,13 @@ class TabDPTEstimator(BaseEstimator):
             indices_nni = self._get_context_indices(
                 self.X_test, context_size=context_size, seed=seed
             )
-            X_nni = X_ctx[torch.tensor(indices_nni)]
-            y_nni = y_ctx[torch.tensor(indices_nni)]
-            X_nni = pad_x(X_nni, self.max_features)
+            X_ctx = pad_x(X_ctx, self.max_features)
             X_query = pad_x(X_query.unsqueeze(1), self.max_features).to(self.device)
-            return self.PreprocessResult(X_nni, y_nni, X_query, feat_perm, mean_y, std_y)
+            return self.PreprocessResult(X_ctx, y_ctx, X_query, feat_perm, mean_y, std_y, torch.tensor(indices_nni))
 
         X_ctx, y_ctx = self._prepare_stacked_context(X_ctx, y_ctx, context_size, seed)
         X_query = pad_x(X_query[None, :, :], self.max_features).to(self.device)
-        return self.PreprocessResult(X_ctx, y_ctx, X_query, feat_perm, mean_y, std_y)
+        return self.PreprocessResult(X_ctx, y_ctx, X_query, feat_perm, mean_y, std_y, None)
 
     def _default_batch_size(self):
         return 4096 if self.device == "cpu" else 128*1024

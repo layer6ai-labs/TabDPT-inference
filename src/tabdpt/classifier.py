@@ -119,8 +119,8 @@ class TabDPTClassifier(TabDPTEstimator, ClassifierMixin):
                 y_ctx_batch = y_ctx
             else:
                 X_query_batch = X_query[start:end]
-                X_ctx_batch = X_ctx[start:end]
-                y_ctx_batch = y_ctx[start:end]
+                X_ctx_batch = X_ctx[prep.indices_nni[start:end]]
+                y_ctx_batch = y_ctx[prep.indices_nni[start:end]]
 
             if self.num_classes <= self.max_num_classes:
                 pred = self.model(

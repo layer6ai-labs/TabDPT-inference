@@ -5,7 +5,6 @@ import torch
 
 from .classifier import TabDPTClassifier
 from .regressor import TabDPTRegressor
-from .utils import normalize_data
 
 def integrated_gradients(
     fitted_model: TabDPTRegressor | TabDPTClassifier,
@@ -21,7 +20,7 @@ def integrated_gradients(
     Runs integrated gradients for one output and returns local attributions.
 
     Attributions for classification are relative to logit space (normalized by log_softmax), and attributions for
-    regression are relative to output values after normalization by context target mean/std.
+    regression are relative to output values after normalization by target mean/std.
 
     Options for baselines are not included because by default, mean/std scaling is applied, meaning that a zero baseline
     is reasonable, and using the model without similar scaling would be an uncommon use case.
@@ -53,7 +52,7 @@ def integrated_gradients(
             "well-defined since the context depends on the test point values."
         )
 
-    is_cls = type(fitted_model) is TabDPTClassifier
+    is_cls = isinstance(fitted_model, TabDPTClassifier)
     if is_cls and fitted_model.num_classes > fitted_model.max_num_classes:
         raise NotImplementedError(
             "Integrated gradients not implemented for high numbers of classes (requiring multiple forward passes)"
@@ -71,7 +70,8 @@ def integrated_gradients(
         X_test,
         context_size=context_size,
         seed=seed,
-        class_perm=class_perm
+        class_perm=class_perm,
+        normalize_y_ctx=not is_cls
     )
     X_ctx, y_ctx, X_query, feat_perm = prep.X_ctx, prep.y_ctx, prep.X_query, prep.feat_perm
     feat_perm = feat_perm.cpu().numpy()
@@ -82,9 +82,8 @@ def integrated_gradients(
         return torch.nn.functional.log_softmax(pred[..., :fitted_model.num_classes], dim=-1).squeeze(1)
 
     def reg_wrapped_forward(X_query):
-        y_ctx_norm, mean_y, std_y = normalize_data(y_ctx, dim=1, return_mean_std=True)
         x_src = torch.cat([X_ctx, X_query.unsqueeze(0)], dim=1)
-        pred = fitted_model.model(x_src=x_src, y_src=y_ctx_norm, is_cls=False)
+        pred = fitted_model.model(x_src=x_src, y_src=y_ctx, is_cls=False)
         logits = pred.squeeze(1)[:, fitted_model.max_num_classes:].float()
         ret = fitted_model._expectation_from_regression_logits(logits)
         return ret
@@ -119,6 +118,10 @@ def integrated_gradients(
         if attrs.shape[1] < len(inv_perm):
             attrs = np.pad(attrs, ((0, 0), (0, len(inv_perm) - attrs.shape[1])))
         attrs = attrs[:,inv_perm]
+
+    # Add back any columns removed by SimpleImputer
+    for i in np.nonzero(np.isnan(fitted_model.imputer.statistics_))[0]:
+        attrs = np.insert(attrs, i, np.zeros_like(attrs[:, 0]), axis=1)
 
     if fitted_model.missing_indicators and any(fitted_model.has_missing_indicator):
         n_missing_indicators = np.sum(fitted_model.has_missing_indicator)
