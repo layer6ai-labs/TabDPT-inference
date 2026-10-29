@@ -99,81 +99,50 @@ class TabDPTClassifier(TabDPTEstimator, ClassifierMixin):
         Returns:
             A class probability array of size `n_instances` x `n_classes`.
         """
-        train_x, train_y, test_x = self._prepare_prediction(X, class_perm=class_perm, seed=seed)
-        num_features = torch.tensor([train_x.shape[-1]], dtype=torch.long, device=train_x.device)
+        prep = self._preprocess(X, context_size=context_size, seed=seed, class_perm=class_perm)
+        X_ctx, y_ctx, X_query = prep.X_ctx, prep.y_ctx, prep.X_query
+        num_features = torch.tensor([X_ctx.shape[-1]], dtype=torch.long, device=X_ctx.device)
 
         if context_size is None:
             context_size = np.inf
-
         if batch_size is None:
-            if self.device == "cpu":
-                batch_size = 4096
-            else:
-                batch_size = 128*1024
-
-        if seed is not None:
-            feat_perm = generate_random_permutation(train_x.shape[1], seed)
-            train_x = train_x[:, feat_perm]
-            test_x = test_x[:, feat_perm]
+            batch_size = self._default_batch_size()
 
         pred_list = []
-        if self._uses_stacked_context(context_size):
-            X_ctx, y_ctx = self._prepare_stacked_context(train_x, train_y, context_size, seed)
-            X_test = pad_x(test_x[None, :, :], self.max_features).to(self.device)
+        for b in range(math.ceil(len(self.X_test) / batch_size)):
+            start = b * batch_size
+            end = min(len(self.X_test), (b + 1) * batch_size)
 
-            for b in range(math.ceil(len(self.X_test) / batch_size)):
-                start = b * batch_size
-                end = min(len(self.X_test), (b + 1) * batch_size)
+            if self._uses_stacked_context(context_size):
+                X_query_batch = X_query[:, start:end]
+                X_ctx_batch = X_ctx
+                y_ctx_batch = y_ctx
+            else:
+                X_query_batch = X_query[start:end]
+                X_ctx_batch = X_ctx[prep.indices_nni[start:end]]
+                y_ctx_batch = y_ctx[prep.indices_nni[start:end]]
 
-                if self.num_classes <= self.max_num_classes:
-                    pred = self.model(
-                        x_src=torch.cat([X_ctx, X_test[:, start:end]], dim=1),
-                        y_src=y_ctx,
-                        is_cls=True
-                    )
-                    pred = torch.nn.functional.log_softmax(pred[..., : self.num_classes].float(), dim=-1)
-                else:
-                    pred = self._predict_large_cls(X_ctx, X_test[:, start:end], y_ctx, num_features)
+            if self.num_classes <= self.max_num_classes:
+                pred = self.model(
+                    x_src=torch.cat([X_ctx_batch, X_query_batch], dim=1),
+                    y_src=y_ctx_batch,
+                    is_cls=True
+                )
+                pred = torch.nn.functional.log_softmax(pred[..., : self.num_classes].float(), dim=-1)
+            else:
+                pred = self._predict_large_cls(X_ctx_batch, X_query_batch, y_ctx_batch, num_features)
 
-                if not return_logits:
-                    pred = pred[..., :self.num_classes] / temperature
-                    pred = torch.nn.functional.softmax(pred.float(), dim=-1)
+            if not return_logits:
+                pred = pred[..., :self.num_classes] / temperature
+                pred = torch.nn.functional.softmax(pred.float(), dim=-1)
+
+            if self._uses_stacked_context(context_size):
                 pred_list.append(pred.squeeze(1))
-        else:
-            for b in range(math.ceil(len(self.X_test) / batch_size)):
-                start = b * batch_size
-                end = min(len(self.X_test), (b + 1) * batch_size)
-
-                indices_nni = self._get_context_indices(
-                    self.X_test[start:end], context_size=context_size, seed=seed
-                )
-                X_nni = train_x[torch.tensor(indices_nni)]
-                y_nni = train_y[torch.tensor(indices_nni)]
-
-                X_nni, y_nni = (
-                    pad_x(torch.Tensor(X_nni), self.max_features).to(self.device),
-                    torch.Tensor(y_nni).to(self.device),
-                )
-                X_eval = test_x[start:end]
-                X_eval = pad_x(X_eval.unsqueeze(1), self.max_features).to(self.device)
-
-                if self.num_classes <= self.max_num_classes:
-                    pred = self.model(
-                        x_src=torch.cat([X_nni, X_eval], dim=1),
-                        y_src=y_nni,
-                        is_cls=True
-                    )
-                    pred = torch.nn.functional.log_softmax(pred[..., : self.num_classes].float(), dim=-1)
-                else:
-                    pred = self._predict_large_cls(X_nni, X_eval, y_nni, num_features)
-
-                pred = pred.float()
+            else:
                 if not return_logits:
-                    pred = pred[..., :self.num_classes] / temperature
-                    pred = torch.nn.functional.softmax(pred, dim=-1)
-                    pred /= pred.sum(axis=-1, keepdims=True)  # numerical stability
-
-                pred_list.append(pred.squeeze(dim=0))
+                    # numerical stability - not sure if needed now, but from legacy code
+                    pred /= pred.sum(axis=-1, keepdims=True)
+                pred_list.append(pred.squeeze(0))
 
         pred_val = torch.cat(pred_list, dim=0).detach().cpu().float().numpy()
 

@@ -26,10 +26,19 @@ class TestClassifier(unittest.TestCase):
         self.assertEqual(p.shape, (N_TRAIN, N_CLASSES))
         np.testing.assert_allclose(p.sum(axis=1), 1.0, atol=1e-4)
 
-    def test_retrieval_path(self):
-        p = self.model.predict_proba(self.X, context_size=20)
+    def test_batching(self):
+        p = self.model.predict_proba(self.X, batch_size=N_TRAIN//4)
         self.assertEqual(p.shape, (N_TRAIN, N_CLASSES))
         np.testing.assert_allclose(p.sum(axis=1), 1.0, atol=1e-4)
+
+    def test_context_reduction(self):
+        for context_reduction in ("retrieval", "subsample", "subsample-balanced"):
+            model = TabDPTClassifier(device=DEVICE, context_reduction=context_reduction)
+            model.fit(self.X, self.y)
+            for batch_size in (None, N_TRAIN//4):
+                p = model.predict_proba(self.X, context_size=20, batch_size=batch_size)
+                self.assertEqual(p.shape, (N_TRAIN, N_CLASSES))
+                np.testing.assert_allclose(p.sum(axis=1), 1.0, atol=1e-4)
 
     def test_return_logits(self):
         logits = self.model.predict_proba(self.X, context_size=2048, return_logits=True)
@@ -97,9 +106,13 @@ class TestRegressor(unittest.TestCase):
         pred = self.model.predict(self.X, n_ensembles=1, context_size=2048)
         self.assertEqual(pred.shape, (N_TRAIN,))
 
-    def test_retrieval_path(self):
-        pred = self.model.predict(self.X, n_ensembles=1, context_size=20)
-        self.assertEqual(pred.shape, (N_TRAIN,))
+    def test_context_reduction(self):
+        for context_reduction in ("retrieval", "subsample"):
+            model = TabDPTRegressor(device=DEVICE, verbose=False)
+            model.fit(self.X, self.y)
+            for batch_size in (None, N_TRAIN//4):
+                pred = model.predict(self.X, n_ensembles=1, context_size=20, batch_size=batch_size)
+                self.assertEqual(pred.shape, (N_TRAIN,))
 
     def test_ensemble(self):
         pred = self.model.predict(self.X, n_ensembles=3, context_size=2048, seed=0)
