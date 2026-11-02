@@ -8,6 +8,7 @@ from .bar_distribution import (
 )
 from .classifier import TabDPTClassifier
 from .regressor import OutputType, TabDPTRegressor
+from .explain import integrated_gradients
 
 __all__ = [
     "TabDPTClassifier",
@@ -19,4 +20,5 @@ __all__ = [
     "distribution_mode",
     "distribution_quantiles",
     "distribution_sample",
+    "integrated_gradients",
 ]
