@@ -7,7 +7,6 @@ from sklearn.base import RegressorMixin
 
 from .bar_distribution import FullPrediction
 from .estimator import TabDPTEstimator
-from .utils import generate_random_permutation, pad_x, normalize_data
 
 OutputType = Literal["mean", "full"]
 
@@ -74,73 +73,44 @@ class TabDPTRegressor(TabDPTEstimator, RegressorMixin):
         seed: int | None = None,
         return_logits: bool = False,
     ):
-        train_x, train_y, test_x = self._prepare_prediction(X, seed=seed)
-        num_features = torch.tensor([train_x.shape[-1]], dtype=torch.long, device=train_x.device)
+        prep = self._preprocess(X, context_size=context_size, seed=seed, normalize_y_ctx=True)
+        X_ctx, y_ctx, X_query, mean_y, std_y = prep.X_ctx, prep.y_ctx, prep.X_query, prep.mean_y, prep.std_y
 
         if context_size is None:
             context_size = np.inf
-
         if batch_size is None:
-            if self.device == "cpu":
-                batch_size = 4096
-            else:
-                batch_size = 128*1024
-
-        if seed is not None:
-            feat_perm = generate_random_permutation(train_x.shape[1], seed)
-            train_x = train_x[:, feat_perm]
-            test_x = test_x[:, feat_perm]
-
-        train_y, mean_y, std_y = normalize_data(train_y, return_mean_std=True)
+            batch_size = self._default_batch_size()
 
         pred_list = []
-        if self._uses_stacked_context(context_size):
-            X_ctx, y_ctx = self._prepare_stacked_context(train_x, train_y, context_size, seed)
-            X_test = pad_x(test_x[None, :, :], self.max_features).to(self.device)
+        for b in range(math.ceil(len(self.X_test) / batch_size)):
+            start = b * batch_size
+            end = min(len(self.X_test), (b + 1) * batch_size)
 
-            for b in range(math.ceil(len(self.X_test) / batch_size)):
-                start = b * batch_size
-                end = min(len(self.X_test), (b + 1) * batch_size)
+            if self._uses_stacked_context(context_size):
+                X_query_batch = X_query[:, start:end]
+                X_ctx_batch = X_ctx
+                y_ctx_batch = y_ctx
+            else:
+                X_query_batch = X_query[start:end]
+                X_ctx_batch = X_ctx[prep.indices_nni[start:end]]
+                y_ctx_batch = y_ctx[prep.indices_nni[start:end]]
 
-                pred = self.model(
-                    x_src=torch.cat([X_ctx, X_test[:, start:end]], dim=1),
-                    y_src=y_ctx,
-                    is_cls=False
-                )
-                logits = pred.squeeze(1)[:, self.max_num_classes:].float()
-                if return_logits:
-                    pred_list.append(logits)
-                else:
-                    y_hat = self._expectation_from_regression_logits(logits)
-                    pred_list.append(y_hat * std_y + mean_y)
-        else:
-            for b in range(math.ceil(len(self.X_test) / batch_size)):
-                start = b * batch_size
-                end = min(len(self.X_test), (b + 1) * batch_size)
+            pred = self.model(
+                x_src=torch.cat([X_ctx_batch, X_query_batch], dim=1),
+                y_src=y_ctx_batch,
+                is_cls=False
+            )
+            if self._uses_stacked_context(context_size):
+                pred = pred.squeeze(1)
+            else:
+                pred = pred.squeeze(0)
+            logits = pred[:, self.max_num_classes:].float()
 
-                indices_nni = self._get_context_indices(
-                    self.X_test[start:end], context_size=context_size, seed=seed
-                )
-                X_nni = train_x[torch.tensor(indices_nni)]
-                y_nni = train_y[torch.tensor(indices_nni)]
-
-                X_nni, y_nni = (
-                    pad_x(torch.Tensor(X_nni), self.max_features).to(self.device),
-                    torch.Tensor(y_nni).to(self.device),
-                )
-                X_eval = test_x[start:end]
-                X_eval = pad_x(X_eval.unsqueeze(1), self.max_features).to(self.device)
-                pred = self.model(
-                    x_src=torch.cat([X_nni, X_eval], dim=1),
-                    y_src=y_nni,
-                    is_cls=False
-                )
-                logits = pred.squeeze(0)[:, self.max_num_classes:].float()
-                if return_logits:
-                    pred_list.append(logits)
-                else:
-                    y_hat = self._expectation_from_regression_logits(logits)
-                    pred_list.append(y_hat * std_y + mean_y)
+            if return_logits:
+                pred_list.append(logits)
+            else:
+                y_hat = self._expectation_from_regression_logits(logits)
+                pred_list.append(y_hat * std_y + mean_y)
 
         preds = torch.cat(pred_list, dim=0)
         if return_logits:
