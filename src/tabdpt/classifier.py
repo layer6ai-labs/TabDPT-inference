@@ -25,6 +25,7 @@ class TabDPTClassifier(TabDPTEstimator, ClassifierMixin):
         compile: bool = True,
         model_weight_path: str | None = None,
         verbose: bool = True,
+        use_kv_cache: bool = True,
     ):
         super().__init__(
             mode="cls",
@@ -39,12 +40,15 @@ class TabDPTClassifier(TabDPTEstimator, ClassifierMixin):
             compile=compile,
             model_weight_path=model_weight_path,
             verbose=verbose,
+            use_kv_cache=use_kv_cache,
         )
 
     def fit(self, X: np.ndarray, y: np.ndarray):
         super().fit(X, y)
         self.num_classes = len(np.unique(self.y_train))
         assert self.num_classes > 1, "Number of classes must be greater than 1"
+        if self.use_kv_cache and self.context_reduction != "retrieval":
+            self._precompute_kv_cache()
 
     def _predict_large_cls(self, X_context, X_eval, y_context, num_features):
         # X_context/X_eval follow the model's (B, T, F) layout; the model returns (T_eval, B, ...).
@@ -54,11 +58,15 @@ class TabDPTClassifier(TabDPTEstimator, ClassifierMixin):
         digit_log_probs = []
         for digit_index in range(num_digits):
             y_digit = (y_context // (self.max_num_classes**digit_index)) % self.max_num_classes
-            forward_out = self.model(
-                x_src=torch.cat([X_context, X_eval], dim=1),
-                y_src=y_digit,
-                is_cls=True
-            )
+            if self.use_kv_cache:
+                kv_digit = self.model.encode_context(X_context, y_digit, is_cls=True)
+                forward_out = self.model.predict_with_cache(X_eval, *kv_digit, is_cls=True)
+            else:
+                forward_out = self.model(
+                    x_src=torch.cat([X_context, X_eval], dim=1),
+                    y_src=y_digit,
+                    is_cls=True
+                )
             chunk = forward_out[-n_eval:, :, : self.max_num_classes].float().detach()
             digit_log_probs.append(torch.nn.functional.log_softmax(chunk, dim=-1))
             del forward_out
@@ -108,6 +116,21 @@ class TabDPTClassifier(TabDPTEstimator, ClassifierMixin):
         if batch_size is None:
             batch_size = self._default_batch_size()
 
+        active_kv = None
+        if self.use_kv_cache and self._uses_stacked_context(context_size) and self.num_classes <= self.max_num_classes:
+            can_use_precomputed = (
+                self._precomputed_kv is not None
+                and (context_size is None or context_size >= self.n_instances)
+                and seed is None
+                and class_perm is None
+            )
+            if can_use_precomputed:
+                active_kv = self._precomputed_kv
+            else:
+                active_kv = self.model.encode_context(X_ctx, y_ctx, is_cls=True)
+                if (context_size is None or context_size >= self.n_instances) and seed is None and class_perm is None:
+                    self._precomputed_kv = active_kv
+
         pred_list = []
         for b in range(math.ceil(len(self.X_test) / batch_size)):
             start = b * batch_size
@@ -123,11 +146,18 @@ class TabDPTClassifier(TabDPTEstimator, ClassifierMixin):
                 y_ctx_batch = y_ctx[prep.indices_nni[start:end]]
 
             if self.num_classes <= self.max_num_classes:
-                pred = self.model(
-                    x_src=torch.cat([X_ctx_batch, X_query_batch], dim=1),
-                    y_src=y_ctx_batch,
-                    is_cls=True
-                )
+                if active_kv is not None and self._uses_stacked_context(context_size):
+                    pred = self.model.predict_with_cache(
+                        X_query_batch,
+                        *active_kv,
+                        is_cls=True
+                    )
+                else:
+                    pred = self.model(
+                        x_src=torch.cat([X_ctx_batch, X_query_batch], dim=1),
+                        y_src=y_ctx_batch,
+                        is_cls=True
+                    )
                 pred = torch.nn.functional.log_softmax(pred[..., : self.num_classes].float(), dim=-1)
             else:
                 pred = self._predict_large_cls(X_ctx_batch, X_query_batch, y_ctx_batch, num_features)

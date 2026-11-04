@@ -46,6 +46,7 @@ class TabDPTEstimator(BaseEstimator):
         compile: bool = True,
         model_weight_path: str | None = None,
         verbose: bool = True,
+        use_kv_cache: bool = True,
     ):
         """
         Initializes the TabDPT Estimator
@@ -114,6 +115,8 @@ class TabDPTEstimator(BaseEstimator):
         assert self.faiss_metric in ["l2", "ip"], 'faiss_metric must be "l2" or "ip"'
 
         self.verbose = verbose
+        self.use_kv_cache = use_kv_cache
+        self._precomputed_kv = None
 
         self.normalizer = normalizer
         match normalizer:
@@ -198,8 +201,12 @@ class TabDPTEstimator(BaseEstimator):
         self.faiss_knn = None
 
         self.is_fitted_ = True
+        self._precomputed_kv = None
         if self.compile:
             self.model.compile()
+
+        if self.mode == "reg" and self.use_kv_cache and self.context_reduction != "retrieval":
+            self._precompute_kv_cache()
 
     def to(self, device: str):
         self.device = device
@@ -207,6 +214,34 @@ class TabDPTEstimator(BaseEstimator):
 
         if self.projection is not None:
             self.projection = self.projection.to(device)
+        self._precomputed_kv = None
+
+    def _precompute_kv_cache(self) -> None:
+        """Precomputes context KV cache for default training instances."""
+        if not self.use_kv_cache or self.context_reduction == "retrieval":
+            return
+        if self.n_instances > getattr(self.model, "max_len", 4096):
+            return
+        if self.n_features > self.max_features and self.feature_reduction == "subsample":
+            return
+
+        train_x = convert_to_torch_tensor(self.X_train).to(self.device).float()
+        train_y = convert_to_torch_tensor(self.y_train).to(self.device).float()
+
+        if self.n_features > self.max_features and self.feature_reduction == "pca":
+            train_x = train_x @ self.projection
+
+        X_ctx = pad_x(train_x[None, :, :], self.max_features).to(self.device)
+
+        if self.mode == "cls":
+            if getattr(self, "num_classes", 0) <= self.max_num_classes:
+                y_ctx = train_y[None, :].float()
+                self._precomputed_kv = self.model.encode_context(X_ctx, y_ctx, is_cls=True)
+        elif self.mode == "reg":
+            from .utils import normalize_data
+            norm_train_y, _, _ = normalize_data(train_y, return_mean_std=True)
+            y_ctx = norm_train_y[None, :].float()
+            self._precomputed_kv = self.model.encode_context(X_ctx, y_ctx, is_cls=False)
 
     def _get_faiss_knn_indices(self, X_test: np.ndarray, context_size: int, seed: int | None = None):
         if self.faiss_knn is None:  # Lazily perform initialization
