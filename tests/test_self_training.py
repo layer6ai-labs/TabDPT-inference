@@ -163,6 +163,12 @@ class TestSelfTrainingContract(unittest.TestCase):
         copy = clone(model)
         self.assertEqual((copy.n_pseudo, copy.selection, copy.clip_sigma), (7, "per-class", 4.))
 
+        class WithThreshold(TabDPTSelfTrainingClassifier):
+            def __init__(self, threshold=0.9, **kwargs):
+                super().__init__(**kwargs)
+                self.threshold = threshold
+        self.assertIn("threshold", WithThreshold._get_param_names())
+
 
 if __name__ == "__main__":
     unittest.main()

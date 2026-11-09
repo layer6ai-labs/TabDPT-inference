@@ -26,8 +26,8 @@ class TabDPTSelfTrainingClassifier(TabDPTClassifier):
             n_pseudo: Maximum number of pseudo-labelled rows to add to the context. Clamped to the
                 number of unlabelled rows available.
             selection: `"global"` keeps the most confident rows overall, as in the paper. `"per-class"`
-                ranks rows within each predicted class and keeps `n_pseudo // n_classes` from each, so a
-                class the model is over-confident about cannot take most of the slots.
+                ranks rows within each predicted class and keeps `n_pseudo // n_classes` (at least one) from
+                each, so a class the model is over-confident about cannot take most of the slots.
             **kwargs: Passed through to `TabDPTClassifier`.
         """
         # Validate before loading the checkpoint, so a bad argument fails immediately.
@@ -41,7 +41,7 @@ class TabDPTSelfTrainingClassifier(TabDPTClassifier):
     def _get_param_names(cls):
         # sklearn's get_params() and clone() read parameter names from the __init__ signature, which
         # would miss everything passed through **kwargs.
-        return sorted(set(TabDPTClassifier._get_param_names()) | {"n_pseudo", "selection"})
+        return sorted(set(TabDPTClassifier._get_param_names()) | set(super()._get_param_names()))
 
     def fit(
         self,
@@ -103,7 +103,7 @@ class TabDPTSelfTrainingClassifier(TabDPTClassifier):
         pseudo_label_indices, pseudo_labels = unlabelled[kept], predicted[kept].astype(y.dtype)
 
         # Stage 2: refit on the labelled rows plus the pseudo-labelled ones. The attributes are set only
-        # once this succeeds, so they always describe the context actually in use.
+        # once this succeeds.
         super().fit(
             np.concatenate([X[is_labelled], X[pseudo_label_indices]]),
             np.concatenate([y[is_labelled], pseudo_labels]),
