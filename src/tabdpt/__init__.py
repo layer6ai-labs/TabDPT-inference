@@ -9,10 +9,12 @@ from .bar_distribution import (
 from .classifier import TabDPTClassifier
 from .regressor import OutputType, TabDPTRegressor
 from .explain import integrated_gradients
+from .self_training import TabDPTSelfTrainingClassifier
 
 __all__ = [
     "TabDPTClassifier",
     "TabDPTRegressor",
+    "TabDPTSelfTrainingClassifier",
     "FullPrediction",
     "OutputType",
     "distribution_mean",
