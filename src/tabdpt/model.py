@@ -6,7 +6,14 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn import LayerNorm, Linear
 
-from .utils import clip_outliers, flash_context, normalize_data
+from .utils import (
+    clip_outliers,
+    convert_to_torch_tensor,
+    flash_context,
+    maskmean,
+    maskstd,
+    normalize_data,
+)
 
 
 class TabDPTModel(nn.Module):
@@ -133,6 +140,188 @@ class TabDPTModel(nn.Module):
 
         # final head
         pred = self.head(src[eval_pos + n_think :].float())
+        return pred
+
+    @flash_context
+    def encode_context(
+        self,
+        x_ctx: torch.Tensor,
+        y_ctx: torch.Tensor,
+        is_cls: bool = True,
+    ) -> tuple[list, int, dict]:
+        """Precomputes and caches the Key and Value states across all transformer layers
+        for the given context dataset.
+
+        Args:
+            x_ctx: Context features with dimensions (B, n_ctx, F) or (n_ctx, F).
+            y_ctx: Context targets with dimensions (B, n_ctx) or (n_ctx,).
+            is_cls: True for classification, False for regression.
+
+        Returns:
+            tuple: (kv_cache, n_ctx, stats)
+                kv_cache: List of (k, v) tuples for each layer in self.transformer_encoder.
+                n_ctx: Number of context rows.
+                stats: Dictionary of preprocessing normalization and outlier clipping statistics.
+        """
+        device = next(self.parameters()).device
+        dtype = self.encoder.weight.dtype
+
+        x_ctx = convert_to_torch_tensor(x_ctx).to(device=device, dtype=dtype)
+        y_ctx = convert_to_torch_tensor(y_ctx).to(device=device)
+
+        if x_ctx.ndim == 2:
+            x_ctx = x_ctx.unsqueeze(0)
+        if y_ctx.ndim == 1:
+            y_ctx = y_ctx.unsqueeze(0)
+
+        x_ctx = x_ctx.transpose(0, 1)  # (n_ctx, B, F)
+        y_ctx = y_ctx.transpose(0, 1)  # (n_ctx, B)
+        n_ctx = y_ctx.shape[0]
+        n_think = self.n_thinking_rows
+
+        # Preprocess context data and record normalization & outlier clipping stats
+        # Step 1: clip outliers
+        mask1 = ~torch.isnan(x_ctx)
+        mean1 = maskmean(x_ctx, mask1, dim=0)
+        std1 = maskstd(x_ctx, mask1, dim=0)
+        cutoff1 = self.clip_sigma * std1
+        mask1 &= cutoff1 >= torch.abs(x_ctx - mean1)
+        cutoff1 = self.clip_sigma * maskstd(x_ctx, mask1, dim=0)
+        c1_min = mean1 - cutoff1
+        c1_max = mean1 + cutoff1
+        x_ctx = torch.clip(x_ctx, c1_min, c1_max)
+
+        # Step 2: normalize data
+        mask2 = ~torch.isnan(x_ctx)
+        mean2 = maskmean(x_ctx, mask2, dim=0)
+        std2 = maskstd(x_ctx, mask2, dim=0) + 1e-6
+        x_ctx = (x_ctx - mean2) / std2
+
+        # Step 3: clip outliers after normalization
+        mask3 = ~torch.isnan(x_ctx)
+        mean3 = maskmean(x_ctx, mask3, dim=0)
+        cutoff3 = self.clip_sigma * maskstd(x_ctx, mask3, dim=0)
+        mask3 &= cutoff3 >= torch.abs(x_ctx - mean3)
+        cutoff3 = self.clip_sigma * maskstd(x_ctx, mask3, dim=0)
+        c3_min = mean3 - cutoff3
+        c3_max = mean3 + cutoff3
+        x_ctx = torch.clip(x_ctx, c3_min, c3_max)
+        x_ctx = torch.nan_to_num(x_ctx, nan=0.0, posinf=0.0, neginf=0.0)
+
+        stats = {
+            "c1_min": c1_min,
+            "c1_max": c1_max,
+            "norm_mean": mean2,
+            "norm_std": std2,
+            "c3_min": c3_min,
+            "c3_max": c3_max,
+        }
+
+        x_ctx = self.encoder(x_ctx)
+        src = self.enc_norm(x_ctx)
+
+        if n_think > 0:
+            B = src.shape[1]
+            src = torch.cat([self.thinking_embed.unsqueeze(1).expand(n_think, B, -1), src], dim=0)
+
+        eval_pos = n_ctx + n_think
+        kv_cache = []
+
+        for l, layer in enumerate(self.transformer_encoder):
+            if is_cls:
+                y_cls = y_ctx.long().clamp(min=0, max=self.n_out - 1)
+                y_emb = self.cls_y_encoders[l](y_cls)
+            else:
+                y_emb = self.reg_y_encoders[l](y_ctx.unsqueeze(-1))
+            if n_think > 0:
+                B = y_emb.shape[1]
+                y_emb = torch.cat([y_emb.new_zeros(n_think, B, y_emb.shape[-1]), y_emb], dim=0)
+
+            src, (k, v) = layer.encode_context(src, y_emb, eval_pos)
+            kv_cache.append((k, v))
+
+        return kv_cache, n_ctx, stats
+
+    @flash_context
+    def predict_with_cache(
+        self,
+        x_qry: torch.Tensor,
+        kv_cache: list | tuple,
+        n_ctx: int | None = None,
+        stats: dict | tuple | None = None,
+        is_cls: bool = True,
+    ) -> torch.Tensor:
+        """Runs fast inference on query samples using precomputed context KV cache.
+
+        Args:
+            x_qry: Query features with dimensions (B, n_qry, F) or (n_qry, F).
+            kv_cache: Precomputed list of (k, v) tuples per layer (or tuple of (kv_cache, n_ctx, stats)).
+            n_ctx: Context size (optional if kv_cache passed as unpacked 3-tuple).
+            stats: Precomputed normalization & outlier clipping statistics dict.
+            is_cls: Kept for API compatibility.
+
+        Returns:
+            torch.Tensor: Predicted values with dimensions (n_qry, B, O).
+        """
+        if isinstance(kv_cache, tuple) and len(kv_cache) == 3 and n_ctx is None and stats is None:
+            kv_cache, n_ctx, stats = kv_cache
+
+        device = next(self.parameters()).device
+        dtype = self.encoder.weight.dtype
+
+        x_qry = convert_to_torch_tensor(x_qry).to(device=device, dtype=dtype)
+        if x_qry.ndim == 2:
+            x_qry = x_qry.unsqueeze(1)
+        elif x_qry.ndim == 3:
+            x_qry = x_qry.transpose(0, 1)
+
+        eval_pos = n_ctx + self.n_thinking_rows
+
+        # Preprocess query features using context stats (supports dict, tuple, or None)
+        if stats is not None:
+            c1_min = c1_max = norm_mean = norm_std = c3_min = c3_max = None
+            if isinstance(stats, dict):
+                c1_min = stats.get("c1_min", stats.get("clip1_min"))
+                c1_max = stats.get("c1_max", stats.get("clip1_max"))
+                norm_mean = stats.get("norm_mean", stats.get("mean2"))
+                norm_std = stats.get("norm_std", stats.get("std2"))
+                c3_min = stats.get("c3_min", stats.get("clip3_min"))
+                c3_max = stats.get("c3_max", stats.get("clip3_max"))
+            elif isinstance(stats, (tuple, list)):
+                if len(stats) == 6:
+                    c1_min, c1_max, norm_mean, norm_std, c3_min, c3_max = stats
+                elif len(stats) == 4:
+                    c1_min, c1_max, norm_mean, norm_std = stats
+                elif len(stats) == 2:
+                    norm_mean, norm_std = stats
+
+            if c1_min is not None and c1_max is not None:
+                c1_min = c1_min.to(device=device, dtype=dtype)
+                c1_max = c1_max.to(device=device, dtype=dtype)
+                x_qry = torch.clip(x_qry, c1_min, c1_max)
+
+            if norm_mean is not None and norm_std is not None:
+                norm_mean = norm_mean.to(device=device, dtype=dtype)
+                norm_std = norm_std.to(device=device, dtype=dtype)
+                x_qry = (x_qry - norm_mean) / norm_std
+
+            if c3_min is not None and c3_max is not None:
+                c3_min = c3_min.to(device=device, dtype=dtype)
+                c3_max = c3_max.to(device=device, dtype=dtype)
+                x_qry = torch.clip(x_qry, c3_min, c3_max)
+
+            x_qry = torch.nan_to_num(x_qry, nan=0.0, posinf=0.0, neginf=0.0)
+
+        x_qry = self.encoder(x_qry)
+        src_qry = self.enc_norm(x_qry)
+
+        for l, layer in enumerate(self.transformer_encoder):
+            k, v = kv_cache[l]
+            k = k.to(device=device, dtype=dtype)
+            v = v.to(device=device, dtype=dtype)
+            src_qry = layer.forward_query(src_qry, k, v, eval_pos)
+
+        pred = self.head(src_qry.float())
         return pred
 
     @classmethod
@@ -295,3 +484,89 @@ class TransformerEncoderLayer(nn.Module):
 
         # back to (L, B, D) for output
         return residual.transpose(0, 1)
+
+    def encode_context(
+        self, x: torch.Tensor, y: torch.Tensor, eval_pos: int
+    ) -> tuple[torch.Tensor, tuple[torch.Tensor, torch.Tensor]]:
+        """Encode context tokens, compute and return normalized key and value representations,
+        and return the updated context representations for the next layer.
+
+        Args:
+            x: Context tensor of shape (eval_pos, B, D).
+            y: Target embedding for context region of shape (eval_pos, B, y_encoder_dim).
+            eval_pos: Total context positions (length of y and K/V).
+
+        Returns:
+            tuple: (updated_x, (k, v)) where:
+                updated_x: Residual-updated context tensor of shape (eval_pos, B, D).
+                k: Key tensor of shape (B, num_heads, eval_pos, head_dim) normalized by k_norm.
+                v: Value tensor of shape (B, num_heads, eval_pos, head_dim).
+        """
+        x = x.transpose(0, 1)
+        y = y.transpose(0, 1)
+        B, L, _ = x.size()
+
+        h = self.attn_norm(x)
+        q = self.q_proj(h)
+        gate = torch.sigmoid(self.q_gate(q))
+        k = self.k_proj(h[:, :eval_pos])
+
+        h_ctx = h[:, :eval_pos]
+        v_in = torch.cat([h_ctx, y], dim=-1)
+        v = self.v_proj(v_in)
+
+        # reshape: (B, L, D) -> (B, num_heads, _, head_dim)
+        q = q.view(B, L, self.num_heads, self.head_dim).transpose(1, 2)
+        k = k.view(B, eval_pos, self.num_heads, self.head_dim).transpose(1, 2)
+        v = v.view(B, eval_pos, self.num_heads, self.head_dim).transpose(1, 2)
+
+        q, k = self.q_norm(q), self.k_norm(k)
+        beta = self.get_scale_param(eval_pos, device=q.device, dtype=q.dtype)
+        default_scale = 1.0 / math.sqrt(self.head_dim)
+        custom_scale = default_scale * beta
+
+        attn = F.scaled_dot_product_attention(q, k, v, scale=custom_scale).transpose(1, 2)
+        attn = attn * gate.unsqueeze(-1)
+        attn = self.out_proj(attn.reshape(B, L, self.num_heads * self.head_dim))
+        residual = attn + self.ff(self.ff_norm(x + attn))
+
+        next_x = (x + residual).transpose(0, 1)
+        return next_x, (k, v)
+
+    def forward_query(
+        self, x_qry: torch.Tensor, k: torch.Tensor, v: torch.Tensor, eval_pos: int
+    ) -> torch.Tensor:
+        """Run attention on query tokens attending to cached context keys and values.
+
+        Args:
+            x_qry: Query tensor of shape (n_qry, B, D).
+            k: Cached key tensor of shape (B_ctx, num_heads, eval_pos, head_dim).
+            v: Cached value tensor of shape (B_ctx, num_heads, eval_pos, head_dim).
+            eval_pos: Total context positions (for attention temperature scaling).
+
+        Returns:
+            torch.Tensor: Residual-updated query tensor of shape (n_qry, B, D).
+        """
+        x = x_qry.transpose(0, 1)
+        B, L, _ = x.size()
+
+        if k.shape[0] != B:
+            k = k.expand(B, -1, -1, -1)
+            v = v.expand(B, -1, -1, -1)
+
+        h = self.attn_norm(x)
+        q = self.q_proj(h)
+        gate = torch.sigmoid(self.q_gate(q))
+        q = q.view(B, L, self.num_heads, self.head_dim).transpose(1, 2)
+        q = self.q_norm(q)
+
+        beta = self.get_scale_param(eval_pos, device=q.device, dtype=q.dtype)
+        default_scale = 1.0 / math.sqrt(self.head_dim)
+        custom_scale = default_scale * beta
+
+        attn = F.scaled_dot_product_attention(q, k, v, scale=custom_scale).transpose(1, 2)
+        attn = attn * gate.unsqueeze(-1)
+        attn = self.out_proj(attn.reshape(B, L, self.num_heads * self.head_dim))
+        residual = attn + self.ff(self.ff_norm(x + attn))
+
+        return (x + residual).transpose(0, 1)

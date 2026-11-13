@@ -26,6 +26,7 @@ class TabDPTRegressor(TabDPTEstimator, RegressorMixin):
         compile: bool = True,
         model_weight_path: str | None = None,
         verbose: bool = True,
+        use_kv_cache: bool = True,
     ):
         super().__init__(
             mode="reg",
@@ -40,6 +41,7 @@ class TabDPTRegressor(TabDPTEstimator, RegressorMixin):
             compile=compile,
             model_weight_path=model_weight_path,
             verbose=verbose,
+            use_kv_cache=use_kv_cache,
         )
 
     def _expectation_from_regression_logits(self, reg_logits: torch.Tensor) -> torch.Tensor:
@@ -81,6 +83,20 @@ class TabDPTRegressor(TabDPTEstimator, RegressorMixin):
         if batch_size is None:
             batch_size = self._default_batch_size()
 
+        active_kv = None
+        if self.use_kv_cache and self._uses_stacked_context(context_size):
+            can_use_precomputed = (
+                self._precomputed_kv is not None
+                and (context_size is None or context_size >= self.n_instances)
+                and seed is None
+            )
+            if can_use_precomputed:
+                active_kv = self._precomputed_kv
+            else:
+                active_kv = self.model.encode_context(X_ctx, y_ctx, is_cls=False)
+                if (context_size is None or context_size >= self.n_instances) and seed is None:
+                    self._precomputed_kv = active_kv
+
         pred_list = []
         for b in range(math.ceil(len(self.X_test) / batch_size)):
             start = b * batch_size
@@ -95,11 +111,18 @@ class TabDPTRegressor(TabDPTEstimator, RegressorMixin):
                 X_ctx_batch = X_ctx[prep.indices_nni[start:end]]
                 y_ctx_batch = y_ctx[prep.indices_nni[start:end]]
 
-            pred = self.model(
-                x_src=torch.cat([X_ctx_batch, X_query_batch], dim=1),
-                y_src=y_ctx_batch,
-                is_cls=False
-            )
+            if active_kv is not None and self._uses_stacked_context(context_size):
+                pred = self.model.predict_with_cache(
+                    X_query_batch,
+                    *active_kv,
+                    is_cls=False
+                )
+            else:
+                pred = self.model(
+                    x_src=torch.cat([X_ctx_batch, X_query_batch], dim=1),
+                    y_src=y_ctx_batch,
+                    is_cls=False
+                )
             if self._uses_stacked_context(context_size):
                 pred = pred.squeeze(1)
             else:
