@@ -45,6 +45,7 @@ class TabDPTClassifier(TabDPTEstimator, ClassifierMixin):
         super().fit(X, y)
         self.num_classes = len(np.unique(self.y_train))
         assert self.num_classes > 1, "Number of classes must be greater than 1"
+        return self
 
     def _predict_large_cls(self, X_context, X_eval, y_context, num_features):
         # X_context/X_eval follow the model's (B, T, F) layout; the model returns (T_eval, B, ...).

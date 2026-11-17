@@ -64,6 +64,8 @@ sudo apt-get install python-dev
 
 ### Tips
 
+`fit` and `predict` accept numpy arrays or pandas DataFrames. In a DataFrame, string, category and boolean columns are ordinal-encoded (missing values and categories unseen in `fit` count as missing), and datetime and timedelta columns are converted to seconds.
+
 If you experience errors caused by `torch compile` (e.g., `InductorError`), try updating package versions and system drivers. 
 
 For better runtime performance, adjust `context_size` or `n_ensembles` to trade off speed and accuracy.
