@@ -14,7 +14,14 @@ from sklearn.preprocessing import StandardScaler, MinMaxScaler, RobustScaler, Po
 from sklearn.utils.validation import check_is_fitted
 
 from .model import TabDPTModel
-from .utils import convert_to_torch_tensor, Log1pScaler, generate_random_permutation, pad_x, normalize_data
+from .utils import (
+    convert_to_torch_tensor,
+    DataFrameEncoder,
+    Log1pScaler,
+    generate_random_permutation,
+    pad_x,
+    normalize_data,
+)
 
 # Constants for model caching and download
 _VERSION = "1_3"
@@ -167,9 +174,37 @@ class TabDPTEstimator(BaseEstimator):
         )
         self.model.eval()
 
+    def _encode_inputs(self, X, fit: bool = False) -> np.ndarray:
+        """Turn the user's X (numpy array or pandas DataFrame) into a float array."""
+        is_dataframe = hasattr(X, "columns")  # pandas is not a dependency, so no isinstance check
+        if fit:
+            self.input_encoder_ = DataFrameEncoder().fit(X) if is_dataframe else None
+        encoder = getattr(self, "input_encoder_", None)  # absent on models pickled before it existed
+        if is_dataframe and encoder is not None:
+            return encoder.transform(X)
+        if encoder is not None and not (encoder.kinds_ == "numeric").all():
+            raise TypeError("This model was fit on a DataFrame with non-numeric columns; pass a DataFrame to predict.")
+        X = np.asarray(X)
+        if X.dtype.kind == "f":  # numpy input is used as is, like before DataFrame support
+            return X
+        try:
+            return X.astype(np.float64)
+        except (TypeError, ValueError) as e:
+            raise type(e)(
+                f"X must be numeric, got an error converting it to float: {e}. "
+                "Pass a pandas DataFrame to have string, categorical and datetime columns encoded."
+            ) from None
+
     def fit(self, X: np.ndarray, y: np.ndarray):
-        assert isinstance(X, np.ndarray), "X must be a numpy array"
-        assert isinstance(y, np.ndarray), "y must be a numpy array"
+        """Store the training data as context.
+
+        Args:
+            X: Training features, `n_instances` x `n_features`: a numeric numpy array, or a pandas DataFrame,
+                whose string, category, boolean and datetime columns are encoded (see `DataFrameEncoder`).
+            y: Targets, a 1D array-like.
+        """
+        X = self._encode_inputs(X, fit=True)
+        y = np.asarray(y)
         assert X.shape[0] == y.shape[0], "X and y must have the same number of samples"
         assert X.ndim == 2, "X must be a 2D array"
         assert y.ndim == 1, "y must be a 1D array"
@@ -200,6 +235,7 @@ class TabDPTEstimator(BaseEstimator):
         self.is_fitted_ = True
         if self.compile:
             self.model.compile()
+        return self
 
     def to(self, device: str):
         self.device = device
@@ -315,6 +351,7 @@ class TabDPTEstimator(BaseEstimator):
         """
 
         check_is_fitted(self)
+        X = self._encode_inputs(X)
         if context_size is None:
             context_size = np.inf
 

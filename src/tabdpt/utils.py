@@ -4,6 +4,7 @@ from typing import Literal
 import faiss
 import numpy as np
 import torch
+from sklearn.preprocessing import OrdinalEncoder
 from torch.nn.attention import SDPBackend, sdpa_kernel
 
 
@@ -116,3 +117,70 @@ class Log1pScaler:
 
     def transform(self, X: np.ndarray):
         return np.log1p(np.abs(X)) * np.sign(X)
+
+
+def _column_kind(dtype) -> str | None:
+    """How a DataFrame column is encoded, from its dtype (pandas dtypes expose a numpy-style ``kind``)."""
+    kind = getattr(dtype, "kind", None)
+    if kind in ("i", "u", "f"):  # also the nullable Int64 / Float64 dtypes
+        return "numeric"
+    if kind in ("b", "O", "S", "U"):  # bool, object, string and category dtypes
+        return "categorical"
+    if kind in ("M", "m"):
+        return "temporal"
+    return None
+
+
+def _to_seconds(col):
+    """Seconds since 1970-01-01 (UTC if timezone-aware) for a datetime column, total seconds for a timedelta one."""
+    if col.dtype.kind == "M":
+        if getattr(col.dt, "tz", None) is not None:
+            col = col.dt.tz_convert(None)
+        col = col - np.datetime64(0, "s")
+    return col.dt.total_seconds().to_numpy(dtype=np.float64, na_value=np.nan)
+
+
+class DataFrameEncoder:
+    """Encode a pandas DataFrame as a float array with one column per input column, in the same order.
+
+    - Numeric columns, including the nullable ``Int64``/``Float64`` dtypes, are cast to float.
+    - String, object, category and boolean columns are ordinal-encoded. Missing values and categories not seen
+      during ``fit`` become NaN, so they get the same missing-value handling as numeric columns.
+    - Datetime columns become seconds since 1970-01-01 (UTC if timezone-aware), timedelta columns total seconds.
+
+    Missing values are NaN in the output. Columns of any other dtype raise a ``TypeError``.
+    """
+
+    def fit(self, X):
+        self.feature_names_in_ = list(X.columns)
+        kinds = [_column_kind(dtype) for dtype in X.dtypes]
+        unsupported = [f"{name!r} ({dtype})" for name, dtype, kind in zip(X.columns, X.dtypes, kinds) if kind is None]
+        if unsupported:
+            raise TypeError(f"Unsupported column dtypes: {', '.join(unsupported)}. Convert them to numbers or strings.")
+        self.kinds_ = np.array(kinds)
+        self.ordinal_encoder_ = None
+        if (self.kinds_ == "categorical").any():
+            self.ordinal_encoder_ = OrdinalEncoder(
+                handle_unknown="use_encoded_value", unknown_value=np.nan, encoded_missing_value=np.nan
+            ).fit(self._categorical(X))
+        return self
+
+    def _categorical(self, X):
+        cat = X.loc[:, self.kinds_ == "categorical"]
+        return cat.astype(object).where(cat.notna(), np.nan)  # pd.NA and None become NaN
+
+    def transform(self, X) -> np.ndarray:
+        if list(X.columns) != self.feature_names_in_:
+            missing = [name for name in self.feature_names_in_ if name not in X.columns]
+            if missing:
+                raise ValueError(f"X is missing columns seen during fit: {missing}")
+            X = X[self.feature_names_in_]
+        out = np.empty(X.shape, dtype=np.float64)
+        numeric = self.kinds_ == "numeric"
+        if numeric.any():
+            out[:, numeric] = X.loc[:, numeric].to_numpy(dtype=np.float64, na_value=np.nan)
+        if self.ordinal_encoder_ is not None:
+            out[:, self.kinds_ == "categorical"] = self.ordinal_encoder_.transform(self._categorical(X))
+        for j in np.flatnonzero(self.kinds_ == "temporal"):
+            out[:, j] = _to_seconds(X.iloc[:, j])
+        return out
